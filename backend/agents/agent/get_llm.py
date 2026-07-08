@@ -1,4 +1,4 @@
-from typing import List
+﻿from typing import List
 
 from backend.core.single_tool import singleton_method
 from langchain_openai import ChatOpenAI
@@ -6,6 +6,11 @@ from llama_index.core.embeddings import BaseEmbedding
 from llama_index.core.bridge.pydantic import Field
 from openai import OpenAI, AsyncOpenAI
 import os
+
+from backend.env import load_backend_env
+
+
+load_backend_env()
 
 
 model = os.getenv('MODEL_NAME')
@@ -27,7 +32,7 @@ def get_llm(model: str = model, streaming: bool = False):
 
 
 class DashScopeEmbedding(BaseEmbedding):
-    """通过 DashScope OpenAI 兼容接口实现的 LlamaIndex Embedding，绕过枚举校验。"""
+    """DashScope OpenAI-compatible embedding adapter."""
     model_name: str = Field(default="text-embedding-v4")
     api_key: str = Field(default="")
     api_base: str = Field(default="")

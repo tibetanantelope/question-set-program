@@ -1,0 +1,38 @@
+# Python runtime/cache
+__pycache__/
+*.py[cod]
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Python virtual environments
+.venv/
+venv/
+backend/.venv/
+
+# Frontend dependencies/build output
+node_modules/
+frontend/node_modules/
+dist/
+frontend/dist/
+.vite/
+frontend/.vite/
+
+# Local env and runtime data
+.env
+backend/.env
+chroma_db/
+backend/chroma_db/
+backend/chroma_runtime/
+*.sqlite3
+
+# Logs
+*.log
+backend/logs/
+
+# OS/editor
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/

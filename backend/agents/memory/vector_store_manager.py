@@ -1,4 +1,4 @@
-import asyncio
+﻿import asyncio
 import os
 from functools import partial
 
@@ -7,17 +7,19 @@ from llama_index.core.schema import Document
 from llama_index.core.vector_stores import MetadataFilters, ExactMatchFilter
 from llama_index.vector_stores.chroma import ChromaVectorStore
 
-from dotenv import load_dotenv
+from pathlib import Path
+
+from backend.env import load_backend_env
 
 from backend.agents.agent.get_llm import get_embedding_model
 from backend.middleware.logging import get_logger
 
 logger = get_logger(__name__)
 
-load_dotenv('.env')
+load_backend_env()
 
 COLLECTION_NAME = os.getenv('CHROMA_COLLECTION', 'vector_store_collection')
-PERSIST_DIR = os.getenv('CHROMA_PERSIST_DIR', './chroma_db')
+PERSIST_DIR = os.getenv('CHROMA_PERSIST_DIR', str(Path(__file__).resolve().parents[2] / 'chroma_db'))
 
 
 from backend.core.single_tool import singleMeta
@@ -27,18 +29,18 @@ class VectorStoreManager(metaclass=singleMeta):
     def __init__(self):
         os.makedirs(PERSIST_DIR, exist_ok=True)
 
-        # 显式持有 embedding 模型实例（DashScope 封装）
+        # 鏄惧紡鎸佹湁 embedding 妯″瀷瀹炰緥锛圖ashScope 灏佽锛?
         self.embed_model = get_embedding_model()
 
-        # 初始化 Chroma 向量存储
+        # 鍒濆鍖?Chroma 鍚戦噺瀛樺偍
         self.vector_store = ChromaVectorStore.from_params(
             collection_name=COLLECTION_NAME,
             persist_dir=PERSIST_DIR
         )
         self.storage_context = StorageContext.from_defaults(vector_store=self.vector_store)
 
-        # 缓存 index，整个生命周期复用，避免每次操作重建
-        # 显式绑定 embed_model，不依赖全局 Settings
+        # 缂撳瓨 index锛屾暣涓敓鍛藉懆鏈熷鐢紝閬垮厤姣忔鎿嶄綔閲嶅缓
+        # 鏄惧紡缁戝畾 embed_model锛屼笉渚濊禆鍏ㄥ眬 Settings
         self._index = VectorStoreIndex.from_vector_store(
             self.vector_store,
             storage_context=self.storage_context,
@@ -46,7 +48,7 @@ class VectorStoreManager(metaclass=singleMeta):
         )
 
     async def add_document(self, text: str, metadata: dict = None) -> bool:
-        """将文本添加到向量库"""
+        """Add a document to the vector store."""
         try:
             if metadata is None:
                 metadata = {}
@@ -59,7 +61,7 @@ class VectorStoreManager(metaclass=singleMeta):
             return False
 
     async def delete_document(self, doc_id: str) -> bool:
-        """从向量库中删除文档"""
+        """Delete a document from the vector store."""
         try:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, partial(self.vector_store.delete, doc_id))
@@ -69,7 +71,7 @@ class VectorStoreManager(metaclass=singleMeta):
             return False
 
     async def update_document(self, doc_id: str, text: str, metadata: dict = None) -> bool:
-        """更新向量库中的文档（先删除再添加）"""
+        """Update a document in the vector store."""
         if not await self.delete_document(doc_id):
             return False
         if metadata is None:
@@ -84,7 +86,7 @@ class VectorStoreManager(metaclass=singleMeta):
             return False
 
     async def query(self, query_text: str, user_id: int = None, top_k: int = 5):
-        """查询向量库，可按 user_id 过滤结果"""
+        """Query the vector store, optionally filtered by user_id."""
         filters = None
         if user_id is not None:
             filters = MetadataFilters(

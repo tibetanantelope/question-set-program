@@ -1,10 +1,10 @@
-import os
+﻿import os
 from typing import TypedDict,Any
 
-from dotenv import load_dotenv
+from backend.env import load_backend_env
 from langchain_core.messages import ToolMessage
 
-load_dotenv()
+load_backend_env()
 
 class react_format(TypedDict):
     thought : list[str]
@@ -18,7 +18,7 @@ class input_format(TypedDict):
     memory: dict[str,list[dict[str,Any]]]
 
 """
-重构一下GraphState的格式和代码
+閲嶆瀯涓€涓婫raphState鐨勬牸寮忓拰浠ｇ爜
 {
     'user_input' : str,
     
@@ -28,7 +28,7 @@ class input_format(TypedDict):
     'thought' : str
     'action' : str,
     'action_args' : ,
-    'messages' : list[ToolMessage]，  #用于存前几轮的observation
+    'messages' : list[ToolMessage]锛? #鐢ㄤ簬瀛樺墠鍑犺疆鐨刼bservation
     'round' : int,
     
     final_result : str
@@ -37,7 +37,7 @@ class input_format(TypedDict):
 
 
 class GraphState(TypedDict):
-    """多智能体工作流的状态定义"""
+    """State for the multi-agent workflow."""
 
     user_input: str
 
@@ -47,7 +47,7 @@ class GraphState(TypedDict):
     thought: str
     action: str
     action_args: dict
-    messages: list[ToolMessage]  # 用于存前几轮的observation
+    messages: list[ToolMessage]  # 鐢ㄤ簬瀛樺墠鍑犺疆鐨刼bservation
     round: int
 
     final_result: str
