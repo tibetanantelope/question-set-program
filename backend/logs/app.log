@@ -1,0 +1,8 @@
+2026-07-08 15:18:29 | INFO    | backend.core.hooks | 应用启动中，正在创建数据库表...
+2026-07-08 15:18:29 | INFO    | backend.core.hooks | 数据库表创建完成
+2026-07-08 15:19:22 | INFO    | middleware.logging | GET / 404 1ms
+2026-07-08 15:19:22 | INFO    | middleware.logging | GET /favicon.ico 404 0ms
+2026-07-08 15:19:45 | INFO    | middleware.logging | GET /docs 200 0ms
+2026-07-08 15:19:47 | INFO    | middleware.logging | GET /api 200 20ms
+2026-07-08 16:38:12 | INFO    | backend.core.hooks | 应用关闭中，正在释放数据库连接...
+2026-07-08 16:38:12 | INFO    | backend.core.hooks | 数据库连接已释放
