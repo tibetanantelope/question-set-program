@@ -1,15 +1,11 @@
-"""
-In-process short-term memory storage.
-
-This lightweight implementation lets the course project run without an external cache service.
-Data is kept per Python process and is cleared
-when the backend restarts.
-"""
+"""Redis-backed short-term memory storage."""
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, ClassVar
-import asyncio
+from typing import Any
+import json
+
+from backend.utils.redis_client import get_redis_client
 
 
 class MemoryUnit(dict):
@@ -24,23 +20,27 @@ class MemoryUnit(dict):
 
 
 class ShortTermMemory:
-    _store: ClassVar[dict[str, list[dict[str, Any]]]] = {}
-    _lock: ClassVar[asyncio.Lock] = asyncio.Lock()
-
     def __init__(self, max_memory_size: int = 10):
         self.max_memory_size = max_memory_size
+        self.redis = get_redis_client()
 
     @staticmethod
     def _key(user_id: int, session_id: int) -> str:
-        return f"user:{user_id}:session:{session_id}"
+        return f"user:{user_id}:session:{session_id}:short_term_memory"
+
+    @staticmethod
+    def _deserialize(raw_memory: str | bytes | dict[str, Any]) -> dict[str, Any]:
+        if isinstance(raw_memory, dict):
+            return raw_memory
+        if isinstance(raw_memory, bytes):
+            raw_memory = raw_memory.decode("utf-8")
+        return json.loads(raw_memory)
 
     async def add_memory(self, user_id: int, session_id: int, memory: MemoryUnit):
-        """Add a memory item, keeping newest records at the head of the list."""
+        """Add a memory item, keeping newest records at the head of the Redis list."""
         key = self._key(user_id, session_id)
-        async with self._lock:
-            memory_list = list(self._store.get(key, []))
-            memory_list.insert(0, dict(memory))
-            self._store[key] = memory_list[: self.max_memory_size]
+        await self.redis.lpush(key, json.dumps(dict(memory), ensure_ascii=False))
+        await self.redis.ltrim(key, 0, self.max_memory_size - 1)
 
     async def get_latest_memories(
         self,
@@ -50,58 +50,45 @@ class ShortTermMemory:
     ) -> list[dict[str, Any]]:
         """Return the latest memory items for the user session."""
         key = self._key(user_id, session_id)
-        async with self._lock:
-            return [dict(item) for item in self._store.get(key, [])[:limit]]
+        raw_memories = await self.redis.lrange(key, 0, limit - 1)
+        return [self._deserialize(item) for item in raw_memories]
 
     async def remove_oldest_memory(self, user_id: int, session_id: int) -> dict[str, Any] | None:
         """Remove and return the oldest memory item."""
         key = self._key(user_id, session_id)
-        async with self._lock:
-            memory_list = self._store.get(key)
-            if not memory_list:
-                return None
-            oldest_memory = memory_list.pop()
-            if memory_list:
-                self._store[key] = memory_list
-            else:
-                self._store.pop(key, None)
-            return dict(oldest_memory)
+        raw_memory = await self.redis.rpop(key)
+        if raw_memory is None:
+            return None
+        return self._deserialize(raw_memory)
 
     async def clear_all(self, user_id: int, session_id: int):
         """Clear all short-term memories for a user session."""
         key = self._key(user_id, session_id)
-        async with self._lock:
-            self._store.pop(key, None)
+        await self.redis.delete(key)
 
     async def get_memory_size(self, user_id: int, session_id: int) -> int:
         key = self._key(user_id, session_id)
-        async with self._lock:
-            return len(self._store.get(key, []))
+        return await self.redis.llen(key)
 
     async def get_max_memory_size(self) -> int:
         return self.max_memory_size
 
     async def delete_max_memory(self, user_id: int, session_id: int, size: int):
-        """Delete the oldest ``size`` memory items."""
+        """Delete the oldest ``size`` memory items and return the remaining memories."""
         if size <= 0:
             return None
 
         key = self._key(user_id, session_id)
-        async with self._lock:
-            memory_list = list(self._store.get(key, []))
-            if not memory_list:
-                return None
+        memory_size = await self.redis.llen(key)
+        if memory_size == 0:
+            return None
 
-            delete_count = min(size, len(memory_list))
-            for _ in range(delete_count):
-                memory_list.pop()
+        delete_count = min(size, memory_size)
+        for _ in range(delete_count):
+            await self.redis.rpop(key)
 
-            if memory_list:
-                self._store[key] = memory_list
-            else:
-                self._store.pop(key, None)
-
-            return [dict(item) for item in memory_list]
+        raw_memories = await self.redis.lrange(key, 0, -1)
+        return [self._deserialize(item) for item in raw_memories]
 
 
 _short_term_memory = ShortTermMemory()
@@ -109,5 +96,3 @@ _short_term_memory = ShortTermMemory()
 
 async def get_short_term_memory() -> ShortTermMemory:
     return _short_term_memory
-
-

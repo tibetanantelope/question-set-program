@@ -1,173 +1,246 @@
-"""
-所有的Agent请求最先发到这里，通过ReAct进行统一调度
-具体功能：
-1. 调用tools，查询记忆模块，并写入记忆
-2. 调用LangGraph中的Node，完成任务执行
-3. 设定一个最大迭代轮次，超过之后，就只接关停
-"""
+"""LangGraph ReAct agent using the model's native tool-calling protocol."""
+
+from __future__ import annotations
+
+import asyncio
+import os
+
+from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langgraph.graph import END, StateGraph
+from pydantic import ValidationError
+
 from backend.agents.agent.get_llm import get_llm
-from backend.agents.tools import TOOLS, TOOL_MAP, get_tool_prompt
+from backend.agents.agent.tools import GraphState
 from backend.agents.skills import get_skill_list_prompt
+from backend.agents.tools import TOOLS, TOOL_MAP, get_tool_prompt
+from backend.agents.tools.result import ToolExecutionError, serialize_tool_result
 from backend.middleware.logging import get_logger
 
-from langgraph.graph import StateGraph, END
-
-from langchain_core.messages import ToolMessage
-import json
-
-from backend.agents.agent.tools import GraphState
-
-from langchain_core.prompts import ChatPromptTemplate
-
 logger = get_logger(__name__)
+TOOL_TIMEOUT_SECONDS = float(os.getenv("AGENT_TOOL_TIMEOUT_SECONDS", "60"))
 
 
 _REACT_SYSTEM_PROMPT = """# 角色
-你是 ReAct 决策 Agent：基于 `user_input` 和 `messages` 上下文，循环「思考→行动」，决定调用工具或直接回答。
+你是智学伴的 ReAct 决策 Agent。请根据用户输入和当前工具调用上下文，自主决定调用工具或直接回答。
 
-# 可用工具 (Tools)
-只能从下列工具中选择，禁止编造不存在的工具：
+# 可用工具
+只能调用系统绑定的工具，禁止编造不存在的工具。工具说明如下：
 
 """ + get_tool_prompt() + """
 
-# 可用 Skill（能力包，按需加载）
-Skill 是存放在文件中的程序化剧本，不是可执行工具。当用户诉求命中某个 Skill 的触发词时，先用 `load_skill_tool` 加载对应 Skill 的剧本，再根据剧本指引决定下一步调哪个业务工具或直接作答。
+# 可用 Skill
+Skill 是按需加载的程序化知识。当用户请求命中某个 Skill 的触发场景时，先调用 load_skill_tool 加载它，再根据加载结果决定后续动作。
 
 """ + get_skill_list_prompt() + """
 
 # 规则
-1. 业务问题必须通过工具获取数据，不得凭空编造。
-2. 每轮只输出一次「思考+行动」，不要模拟工具返回；真实 Observation 由系统写入 `messages`。
-3. 每次只调用一个 tool。
-4. 决策必须结合 `messages` 中前序工具的 `content`，而非只看 `user_input`。
-5. 命中 Skill 触发词时，优先用 `load_skill_tool` 加载剧本，再进入业务工具调用。
-6. 若工具和自身能力均无法解答，`final_result` 填："我不能解答用户的问题"。
-
-# 输出格式
-只返回一段合法 JSON，禁止 Markdown 代码块或额外解释。
-
-- 需调工具：`action`=工具名，`action_args`=参数，`final_result`=`""`
-- 信息已充足：`action`=''，`action_args`=`{{}}`，`final_result`=通俗易懂的最终回答
-
-结构：
-{{
-    "thought": "分析上下文是否充足，确定下一步",
-    "action": "工具名 或 null",
-    "action_args": {{"参数名": "参数值"}},
-    "final_result": "最终回答"
-}}
+1. 查询业务数据或执行具体能力时，必须调用工具，不得编造工具结果。
+2. 使用模型原生 Function Calling 选择工具，不要用文本、JSON 或 Markdown 模拟工具调用。
+3. 每轮最多调用一个工具；如果仍需其他工具，等待真实工具结果后再决定下一步。
+4. 必须结合前序 ToolMessage 的结果继续决策。
+   ToolMessage 是JSON对象：success表示是否成功，code表示结果码，message是说明，data是数据。
+   success=false时，根据code决定修正参数、改用其他工具或向用户说明失败，不得把失败内容当成正常数据。
+5. 命中 Skill 触发场景时，先调用 load_skill_tool，再按加载结果行动。
+6. 信息充分时直接用简洁、易懂的中文回答用户。
+7. 工具和自身能力均无法处理时，明确说明“我暂时无法处理这个问题”。
 """
 
 REACT_PROMPT = ChatPromptTemplate.from_messages([
     ("system", _REACT_SYSTEM_PROMPT),
-    ("user", "{input}")
+    ("user", "{user_input}"),
+    MessagesPlaceholder(variable_name="messages"),
 ])
 
 
 def react_think_node(state: GraphState) -> dict:
-    """LLM思考：是否调用Tool、调用哪个"""
-    llm_input = {
-        "user_input": state['user_input'],
-        "messages": state['messages'],
-        "user_id": state['user_id'],
-        "session_id": state['session_id']
-    }
-    llm = get_llm().bind_tools(TOOLS)
-    ReAct_chain = REACT_PROMPT | llm
-    response_content = ReAct_chain.invoke({"input": llm_input}).content
-    response = json.loads(response_content)
+    """Use native tool calls to choose one action or produce the final answer."""
+    round_number = state["round"] + 1
+    try:
+        llm = get_llm().bind_tools(TOOLS)
+        chain = REACT_PROMPT | llm
+        response = chain.invoke({
+            "user_input": state["user_input"],
+            "messages": state["messages"],
+        })
+    except Exception:
+        logger.exception("Agent model invocation failed in round %s", round_number)
+        fallback = "智能学习服务暂时不可用，请稍后重试。"
+        return {
+            "thought": "模型调用失败",
+            "action": "",
+            "action_args": {},
+            "tool_call_id": "",
+            "round": round_number,
+            "final_result": fallback,
+            "messages": [AIMessage(content=fallback)],
+        }
 
-    round = state['round'] + 1
-    logger.info("轮次: %s", round)
-    logger.debug("输入: %s", llm_input)
-    logger.debug("思考结果: %s", response["thought"])
-    logger.info("调用tool: %s", response["action"])
-    logger.debug("调用tool参数: %s", response["action_args"])
-    logger.debug("messages: %s", state['messages'])
-    logger.info("最终回答final_result: %s", response["final_result"])
+    tool_calls = response.tool_calls or []
 
-    return {
-        'thought' : response["thought"],
-        'action' : response["action"],
-        'action_args' : response["action_args"],
-        'round' : round,
-        'final_result' : response["final_result"]
-    }
+    if tool_calls:
+        # The workflow deliberately executes at most one tool per round.
+        tool_call = tool_calls[0]
+        if (
+            not isinstance(tool_call.get("name"), str)
+            or not tool_call.get("name")
+            or not isinstance(tool_call.get("args", {}), dict)
+            or not tool_call.get("id")
+        ):
+            logger.error("Invalid native tool call: %r", tool_call)
+            fallback = "工具调用格式无效，请重新描述你的学习问题。"
+            return {
+                "thought": "工具调用格式无效",
+                "action": "",
+                "action_args": {},
+                "tool_call_id": "",
+                "round": round_number,
+                "final_result": fallback,
+                "messages": [AIMessage(content=fallback)],
+            }
 
-# ----------------------
-# 6. Tool 执行节点（手脚）
-# ----------------------
-async def tool_exec_node(state: GraphState) -> dict:
-    """执行LLM选择的Tool"""
-    func_name = state['action']
-    args = state['action_args']
+        if round_number >= 5:
+            fallback = "处理步骤已达到上限，请缩小问题范围后重试。"
+            return {
+                "thought": "已达到最大工具调用轮数",
+                "action": "",
+                "action_args": {},
+                "tool_call_id": "",
+                "round": round_number,
+                "final_result": fallback,
+                "messages": [AIMessage(content=fallback)],
+            }
 
-    # query_memory_tool 需要 user_id/session_id，LLM 不知道具体值，从 state 注入
-    if func_name == "query_memory_tool":
-        args['user_id'] = state['user_id']
-        args['session_id'] = state['session_id']
-
-    # user_profile_*_tool 只需 user_id，由 state 注入
-    if func_name in (
-        "user_profile_save_tool",
-        "user_profile_query_tool",
-        "user_profile_delete_tool",
-    ):
-        args['user_id'] = state['user_id']
-
-    # 图节点本身在事件循环中运行，直接 await 异步实现，避免 _run 的 sync/async 桥接
-    tool = TOOL_MAP.get(func_name)
-    if tool:
-        res = await tool._arun(**args)
+        # Keep the stored AIMessage protocol-consistent if a provider ignores
+        # the one-tool-per-round instruction and returns parallel calls.
+        response.tool_calls = [tool_call]
+        action = tool_call["name"]
+        action_args = tool_call.get("args", {})
+        tool_call_id = tool_call["id"]
+        final_result = ""
+        status = f"正在调用工具：{action}"
     else:
-        res = f"未知工具：{func_name}"
+        action = ""
+        action_args = {}
+        tool_call_id = ""
+        final_result = (
+            response.content
+            if isinstance(response.content, str)
+            else str(response.content)
+        )
+        status = "回答已生成"
 
-    messages = state['messages']
-    messages.append(
-        ToolMessage(content=res,
-                    tool_call_id=f"{func_name}_{state['round']}"))
+    logger.info("Agent round: %s", round_number)
+    logger.info("Agent tool: %s", action or "none")
+    logger.debug("Agent tool args: %s", action_args)
 
     return {
-        'messages': messages
+        "thought": status,
+        "action": action,
+        "action_args": action_args,
+        "tool_call_id": tool_call_id,
+        "round": round_number,
+        "final_result": final_result,
+        # add_messages reducer appends the AIMessage to the graph history.
+        "messages": [response],
     }
 
-# ----------------------
-# 7. 路由决策：是否继续ReAct循环
-# ----------------------
+
+async def tool_exec_node(state: GraphState) -> dict:
+    """Execute the selected tool and append a protocol-correct ToolMessage."""
+    func_name = state["action"]
+    tool = TOOL_MAP.get(func_name)
+    try:
+        if tool is None:
+            raise ToolExecutionError("UNKNOWN_TOOL", f"系统不存在工具：{func_name}")
+
+        args_schema = getattr(tool, "args_schema", None)
+        args = dict(state["action_args"])
+        if args_schema is not None:
+            args = args_schema.model_validate(args).model_dump(exclude_none=True)
+
+        # Identity-bound parameters never come from model-generated arguments.
+        if func_name == "query_memory_tool":
+            args["user_id"] = state["user_id"]
+            args["session_id"] = state["session_id"]
+        if func_name in (
+            "user_profile_save_tool",
+            "user_profile_query_tool",
+            "user_profile_delete_tool",
+        ):
+            args["user_id"] = state["user_id"]
+
+        result = await asyncio.wait_for(
+            tool._arun(**args),
+            timeout=TOOL_TIMEOUT_SECONDS,
+        )
+        if hasattr(result, "content"):
+            result = result.content
+
+        content = serialize_tool_result(
+            tool=func_name,
+            success=True,
+            code="OK",
+            message="工具执行成功",
+            data=result,
+        )
+    except ValidationError as exc:
+        content = serialize_tool_result(
+            tool=func_name,
+            success=False,
+            code="INVALID_TOOL_ARGUMENTS",
+            message="工具参数不符合要求",
+            data={"errors": exc.errors(include_url=False)},
+        )
+    except ToolExecutionError as exc:
+        content = serialize_tool_result(
+            tool=func_name,
+            success=False,
+            code=exc.code,
+            message=exc.message,
+        )
+    except TimeoutError:
+        logger.warning("Tool %s timed out after %ss", func_name, TOOL_TIMEOUT_SECONDS)
+        content = serialize_tool_result(
+            tool=func_name,
+            success=False,
+            code="TOOL_TIMEOUT",
+            message="工具执行超时，请稍后重试",
+        )
+    except Exception:
+        logger.exception("Unhandled error while executing tool %s", func_name)
+        content = serialize_tool_result(
+            tool=func_name,
+            success=False,
+            code="TOOL_EXECUTION_FAILED",
+            message="工具执行失败，请稍后重试",
+        )
+
+    return {
+        "messages": [ToolMessage(
+            content=content,
+            tool_call_id=state["tool_call_id"],
+            name=func_name,
+        )]
+    }
+
+
 def should_continue(state: GraphState) -> str:
-    """
-    自主决策：
-    - 还有工具要调用且未超上限 → 回到执行节点
-    - 没有 → 结束，回答用户
-    """
-    logger.debug("正在执行should_continue_node")
-    if state['action'] != '' and state['round'] < 5:
+    """Continue while the model selected a tool and the round limit permits it."""
+    if state["action"] and state["round"] < 5:
         return "execute_tool"
     return END
 
-# ----------------------
-# 8. 构建 LangGraph 图
-# ----------------------
-workflow = StateGraph(GraphState) #type:ignore
 
-# 添加节点
-
-workflow.add_node("react_think", react_think_node) #type:ignore
-workflow.add_node("execute_tool", tool_exec_node) #type:ignore
-
-# 入口
+workflow = StateGraph(GraphState)
+workflow.add_node("react_think", react_think_node)
+workflow.add_node("execute_tool", tool_exec_node)
 workflow.set_entry_point("react_think")
-
-# 条件边：自主决定下一步！
-workflow.add_conditional_edges(
-    "react_think",
-    should_continue
-)
-
-# 执行完工具 → 回到思考
+workflow.add_conditional_edges("react_think", should_continue)
 workflow.add_edge("execute_tool", "react_think")
 
-# 编译
+_compiled_app = workflow.compile()
+
 def get_app():
-    app = workflow.compile()
-    return app
+    """Return the process-wide compiled graph."""
+    return _compiled_app

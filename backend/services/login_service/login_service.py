@@ -1,10 +1,11 @@
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from backend.model import get_db
 from backend.model.user import User
 from backend.core.security import verify_password, get_password_hash, create_access_token
 
 
-class loginService:
+class LoginService:
     async def login(self, username: str, password: str) -> dict:
         async for db in get_db():
             result = await db.execute(select(User).where(User.username == username))
@@ -28,7 +29,11 @@ class loginService:
 
             new_user = User(username=username, password=get_password_hash(password))
             db.add(new_user)
-            await db.commit()
+            try:
+                await db.commit()
+            except IntegrityError:
+                await db.rollback()
+                return {"code": 400, "msg": "用户名已存在", "data": None}
             await db.refresh(new_user)
             return {
                 "code": 200,
@@ -36,6 +41,9 @@ class loginService:
                 "data": {
                     "id": new_user.id,
                     "username": new_user.username,
-                    "user_privilege": new_user.user_privilege,
                 },
             }
+
+
+# 保留旧名称，避免其他尚未迁移的模块导入失败。
+loginService = LoginService

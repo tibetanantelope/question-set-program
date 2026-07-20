@@ -1,11 +1,11 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 import json
 from typing import Optional
 
 from backend.agents.memory.long_term_memory import LongTermMemory
-from backend.agents.memory.memory_manager import MemoryManager
+from backend.agents.memory.memory_manager import MemoryManager, format_memory_context
 from backend.agents.memory.short_term_memory import ShortTermMemory, MemoryUnit
 from backend.agents.memory.vector_store_manager import VectorStoreManager
 from backend.dao.user_profile_mapper import UserProfileMapper
@@ -31,59 +31,51 @@ agent_router = APIRouter(prefix="/agent", tags=["agent"])
 user_profile_mapper = UserProfileMapper(AsyncSessionLocal)
 short_term_memory = ShortTermMemory(max_memory_size=10)
 long_term_memory = LongTermMemory(user_profile_mapper, short_term_memory)
-VectorStoreManager = VectorStoreManager()
-memory_manager = MemoryManager(long_term_memory, short_term_memory, VectorStoreManager)
+vector_store_manager = VectorStoreManager()
+memory_manager = MemoryManager(long_term_memory, short_term_memory, vector_store_manager)
+agent_app = get_app()
 
 
-def _format_memory_context(short_memories: list) -> str:
-    """将最近3轮原始短期记忆格式化为对话上下文字符串，直接拼接不经过LLM"""
-    if not short_memories:
-        return ""
-    recent = short_memories[:3]
-    lines = ["【近期对话记录】"]
-    for mem in reversed(recent):  # 从旧到新展示，保持时序
-        user_mem = mem.get('memory', {}).get('user_memory', '')
-        model_mem = mem.get('memory', {}).get('model_memory', '')
-        if user_mem:
-            lines.append(f"用户：{user_mem}")
-        if model_mem:
-            lines.append(f"助手：{model_mem}")
-    return "\n".join(lines)
+async def build_agent_state(
+    user_id: int,
+    session_id: int,
+    text: str,
+) -> GraphState:
+    """Build the same memory-aware state for normal and streaming requests."""
+    memory_data = await memory_manager.get_memory_for_planner(
+        user_id, session_id, query_text=text
+    )
+    memory_context = format_memory_context(memory_data)
+    user_input = (
+        f"{memory_context}\n\n【当前问题】\n{text}"
+        if memory_context
+        else text
+    )
+    return {
+        "user_input": user_input,
+        "user_id": user_id,
+        "session_id": session_id,
+        "thought": "",
+        "action": "",
+        "action_args": {},
+        "tool_call_id": "",
+        "messages": [],
+        "round": 0,
+        "final_result": "",
+    }
 
 
 @agent_router.post('/analyse')
 async def analyse(request: TextRequest, token: str = None, user: User = Depends(get_current_user)) -> dict:
     if user:
-        user_id = request.id if request.id is not None else request.user_id
-        if user_id is None:
-            raise HTTPException(status_code=422, detail="Missing field: id or user_id")
+        # The authenticated token is the only source of the effective user id.
+        # Legacy request.id/request.user_id fields are accepted but ignored.
+        user_id = user.id
         session_id = request.session_id
         text = request.text
 
-        # 获取近3轮短期记忆，格式化后拼接到 user_input 头部
-        memory_data = await memory_manager.get_memory_for_planner(user_id, session_id)
-        short_memories = memory_data.get('short_memory', [])
-        memory_context = _format_memory_context(short_memories)
-
-        if memory_context:
-            user_input = f"{memory_context}\n\n【当前问题】\n{text}"
-        else:
-            user_input = text
-
-        state: GraphState = {
-            'user_input': user_input,
-            'user_id': user_id,
-            'session_id': session_id,
-            'thought': '',
-            'action': '',
-            'action_args': {},
-            'messages': [],
-            'round': 0,
-            'final_result': ''
-        }
-
-        app = get_app()
-        result = await app.ainvoke(state)
+        state = await build_agent_state(user_id, session_id, text)
+        result = await agent_app.ainvoke(state)
 
         # 写入记忆：保存原始用户文本（不含历史上下文），避免记忆污染
         memory_unit = MemoryUnit(text, result.get('final_result', ''))
@@ -109,31 +101,10 @@ async def _stream_generator(text: str, user_id: int, session_id: int):
     - observation：tool 执行结果
     - result：最终回答
     """
-    memory_data = await memory_manager.get_memory_for_planner(user_id, session_id)
-    short_memories = memory_data.get('short_memory', [])
-    memory_context = _format_memory_context(short_memories)
-
-    if memory_context:
-        user_input = f"{memory_context}\n\n【当前问题】\n{text}"
-    else:
-        user_input = text
-
-    state: GraphState = {
-        'user_input': user_input,
-        'user_id': user_id,
-        'session_id': session_id,
-        'thought': '',
-        'action': '',
-        'action_args': {},
-        'messages': [],
-        'round': 0,
-        'final_result': ''
-    }
-
-    app = get_app()
+    state = await build_agent_state(user_id, session_id, text)
     final_result = ''
 
-    async for chunk in app.astream(state, stream_mode="updates"):
+    async for chunk in agent_app.astream(state, stream_mode="updates"):
         # react_think 节点更新：推送思考过程或最终结果
         if 'react_think' in chunk:
             update = chunk['react_think']
@@ -160,7 +131,7 @@ async def _stream_generator(text: str, user_id: int, session_id: int):
             if messages:
                 last_msg = messages[-1]
                 obs = last_msg.content
-                if last_msg.tool_call_id.startswith("load_skill_tool_"):
+                if getattr(last_msg, "name", None) == "load_skill_tool":
                     payload = json.dumps(
                         {'type': 'skill_loaded', 'content': obs},
                         ensure_ascii=False
@@ -182,9 +153,7 @@ async def analyse_stream(
     request: TextRequest,
     user: User = Depends(get_current_user)
 ):
-    user_id = request.id if request.id is not None else request.user_id
-    if user_id is None:
-        raise HTTPException(status_code=422, detail="Missing field: id or user_id")
+    user_id = user.id
 
     return StreamingResponse(
         _stream_generator(request.text, user_id, request.session_id),

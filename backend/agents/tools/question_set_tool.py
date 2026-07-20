@@ -5,10 +5,11 @@ from langchain_core.tools import BaseTool
 from backend.agents.agent.extract_agent import async_extract_tool, extract_tool
 from backend.agents.agent.question_set_agent import async_question_set_tool, question_set_tool
 from pydantic import BaseModel,Field
+from backend.agents.tools.result import ToolExecutionError
 
 
 class QuestionSetInput(BaseModel):
-    query: str = Field(description="用户的题目请求")
+    query: str = Field(min_length=1, max_length=2000, description="用户的题目请求")
 
 class QuestionSetTool(BaseTool):
     name :str = "question_set_tool"
@@ -24,10 +25,12 @@ class QuestionSetTool(BaseTool):
             }
             result = question_set_tool(new_input)
             if 'error' in result:
-                return f"【题目生成】生成变式题失败：{result['error']}"
+                raise ToolExecutionError("QUESTION_GENERATION_FAILED", "生成变式题失败")
             return f"【题目生成】已生成变式题：\n{result['result']}"
         except Exception as e:
-            return f"【题目生成】生成变式题失败：{str(e)}"
+            if isinstance(e, ToolExecutionError):
+                raise
+            raise ToolExecutionError("QUESTION_GENERATION_FAILED", "生成变式题失败") from e
 
     async def _arun(self, query: str) -> str:
         """执行题目生成工具"""
@@ -39,7 +42,9 @@ class QuestionSetTool(BaseTool):
             }
             result = await async_question_set_tool(new_input)
             if 'error' in result:
-                return f"【题目生成】生成变式题失败：{result['error']}"
+                raise ToolExecutionError("QUESTION_GENERATION_FAILED", "生成变式题失败")
             return f"【题目生成】已生成变式题：\n{result['result']}"
         except Exception as e:
-            return f"【题目生成】生成变式题失败：{str(e)}"
+            if isinstance(e, ToolExecutionError):
+                raise
+            raise ToolExecutionError("QUESTION_GENERATION_FAILED", "生成变式题失败") from e

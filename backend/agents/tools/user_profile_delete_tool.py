@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from backend.agents.memory.long_term_memory import LongTermMemory
 from backend.agents.memory.short_term_memory import get_short_term_memory
 from backend.dao.user_profile_mapper import get_user_profile_mapper
+from backend.agents.tools.result import ToolExecutionError
 
 
 class UserProfileDeleteInput(BaseModel):
@@ -23,11 +24,11 @@ class UserProfileDeleteTool(BaseTool):
             loop = asyncio.get_event_loop()
             return loop.run_until_complete(self._arun(user_id=user_id))
         except RuntimeError:
-            return "【用户画像】删除失败：无法在当前事件循环中执行"
+            raise ToolExecutionError("SYNC_TOOL_UNAVAILABLE", "当前环境不能同步删除用户画像")
 
     async def _arun(self, user_id: Optional[int] = None) -> str:
         if user_id is None:
-            return "【用户画像】删除失败：缺少 user_id"
+            raise ToolExecutionError("MISSING_USER_CONTEXT", "缺少当前用户身份")
         try:
             mapper = await get_user_profile_mapper()
             stm = await get_short_term_memory()
@@ -38,4 +39,4 @@ class UserProfileDeleteTool(BaseTool):
                 return f"【用户画像】已删除用户 {user_id} 的画像"
             return f"【用户画像】用户 {user_id} 无画像可删"
         except Exception as e:
-            return f"【用户画像】删除失败：{str(e)}"
+            raise ToolExecutionError("PROFILE_DELETE_FAILED", "用户画像删除失败") from e

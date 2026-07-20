@@ -2,7 +2,9 @@
 记忆精炼 Agent：将口语化对话列表转化为客观第三方记录，写入向量存档。
 Prompt 从 backend/agents/skills/memory_refinement/SKILL.md 读取，实现单一事实源。
 """
+import json
 import os
+import re
 
 import dotenv
 from langchain_core.messages import SystemMessage, HumanMessage
@@ -39,4 +41,13 @@ async def get_extract_memory(memory: list[dict[str, str]]) -> list[dict[str, str
         SystemMessage(content=system_body),
         HumanMessage(content=str(memory)),
     ])
-    return response
+    content = response.content if hasattr(response, "content") else response
+    if not isinstance(content, str):
+        raise ValueError("记忆提炼结果不是文本")
+
+    # Accept a plain JSON array or a fenced JSON response.
+    content = re.sub(r"^```(?:json)?\s*|\s*```$", "", content.strip())
+    parsed = json.loads(content)
+    if not isinstance(parsed, list):
+        raise ValueError("记忆提炼结果必须是JSON数组")
+    return parsed

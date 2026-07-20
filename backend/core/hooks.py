@@ -1,19 +1,21 @@
 from backend.model import engine, Base
 from backend.middleware.logging import get_logger
+from backend.utils.redis_client import close_redis
 
 logger = get_logger(__name__)
 
 
 async def startup_event():
-    """应用启动时创建数据库表"""
-    logger.info("应用启动中，正在创建数据库表...")
+    """Create database tables when the application starts."""
+    logger.info("Application startup: creating database tables...")
     async with engine.begin() as conn:
-        # 创建所有已定义的表
         await conn.run_sync(Base.metadata.create_all)
-    logger.info("数据库表创建完成")
+    logger.info("Database tables are ready")
+
 
 async def shutdown_event():
-    """应用关闭时释放资源"""
-    logger.info("应用关闭中，正在释放数据库连接...")
+    """Release database and Redis resources when the application shuts down."""
+    logger.info("Application shutdown: releasing resources...")
     await engine.dispose()
-    logger.info("数据库连接已释放")
+    await close_redis()
+    logger.info("Database and Redis resources released")

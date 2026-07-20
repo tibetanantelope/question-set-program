@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智学伴 · 智能学习空间</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar" id="sidebar">
+      <div class="brand">
+        <div class="brand-logo">智</div>
+        <div><strong>智学伴</strong><span>AI 个性化学习助手</span></div>
+      </div>
+
+      <nav class="nav" aria-label="主导航">
+        <button class="nav-item active" data-view="home"><span class="nav-icon">⌂</span><span>学习首页</span></button>
+        <button class="nav-item" data-view="learn"><span class="nav-icon">✦</span><span>智能学习</span><i>AI</i></button>
+        <button class="nav-item" data-view="profile"><span class="nav-icon">◎</span><span>学习画像</span></button>
+        <button class="nav-item" data-view="records"><span class="nav-icon">▤</span><span>学习记录</span></button>
+        <div class="nav-divider"></div>
+        <button class="nav-item" data-view="points"><span class="nav-icon">◆</span><span>积分中心</span><b>126</b></button>
+        <button class="nav-item" data-view="vip"><span class="nav-icon">♛</span><span>会员中心</span></button>
+      </nav>
+
+      <div class="side-goal">
+        <div class="goal-top"><span>本周学习目标</span><strong>68%</strong></div>
+        <div class="progress"><i style="width:68%"></i></div>
+        <p>已完成 5 / 7 个学习任务</p>
+      </div>
+
+      <button class="user-mini" data-view="settings">
+        <span class="avatar">林</span>
+        <span><strong>林小智</strong><small>初中 · 七年级</small></span>
+        <em>›</em>
+      </button>
+    </aside>
+
+    <div class="shell">
+      <header class="topbar">
+        <button class="mobile-menu" id="mobileMenu">☰</button>
+        <div class="top-title"><h1 id="pageTitle">学习首页</h1><p id="pageSubtitle">下午好，继续保持今天的学习节奏吧</p></div>
+        <div class="top-actions">
+          <button class="points-pill" data-view="points"><span>◆</span><strong id="pointBalance">126</strong> 积分</button>
+          <button class="icon-btn notification">♢<i></i></button>
+          <button class="avatar top-avatar">林</button>
+        </div>
+      </header>
+
+      <main class="content">
+        <!-- 学习首页 -->
+        <section class="view active" id="view-home">
+          <div class="hero-card">
+            <div class="hero-copy">
+              <span class="eyebrow">今日学习 · 2026年7月16日</span>
+              <h2>从薄弱点开始，今天再进步一点</h2>
+              <p>根据最近的练习表现，建议你优先巩固“一元一次方程—移项”。</p>
+              <div class="hero-actions">
+                <button class="btn primary" data-view="learn">开始今日练习 <span>→</span></button>
+                <button class="btn ghost" data-view="profile">查看学习画像</button>
+              </div>
+            </div>
+            <div class="hero-visual" aria-hidden="true">
+              <div class="orbit orbit-a"></div><div class="orbit orbit-b"></div>
+              <div class="book"><span>AI</span><i></i><b>+</b></div>
+              <div class="float-card card-a">掌握度<br><strong>72%</strong></div>
+              <div class="float-card card-b">连续学习<br><strong>5天</strong></div>
+            </div>
+          </div>
+
+          <div class="stat-grid">
+            <article class="stat-card"><span class="stat-icon blue">✓</span><div><p>今日完成题目</p><strong>12 <small>题</small></strong><em>比昨日多 3 题</em></div></article>
+            <article class="stat-card"><span class="stat-icon green">↗</span><div><p>本周正确率</p><strong>78<small>%</small></strong><em>较上周 +6%</em></div></article>
+            <article class="stat-card"><span class="stat-icon orange">◷</span><div><p>累计学习时长</p><strong>8.6 <small>小时</small></strong><em>本周 2.1 小时</em></div></article>
+            <article class="stat-card"><span class="stat-icon purple">◆</span><div><p>当前积分</p><strong>126 <small>分</small></strong><em>今日获得 7 分</em></div></article>
+          </div>
+
+          <div class="dashboard-grid">
+            <article class="panel weak-panel">
+              <div class="panel-head"><div><h3>需要关注的知识点</h3><p>根据近期答题情况为你推荐</p></div><button class="text-btn" data-view="profile">查看全部 →</button></div>
+              <div class="knowledge-list">
+                <div class="knowledge-item"><div class="knowledge-rank red">1</div><div class="knowledge-main"><strong>一元一次方程 · 移项</strong><span>最近 8 题答错 4 题，主要为符号错误</span><div class="mini-progress"><i style="width:55%"></i></div></div><div class="score danger"><b>55</b><small>基础薄弱</small></div><button class="round-go" data-view="learn">→</button></div>
+                <div class="knowledge-item"><div class="knowledge-rank amber">2</div><div class="knowledge-main"><strong>整式的加减 · 去括号</strong><span>掌握度有所提升，建议继续巩固</span><div class="mini-progress amber-bar"><i style="width:68%"></i></div></div><div class="score warning"><b>68</b><small>正在巩固</small></div><button class="round-go" data-view="learn">→</button></div>
+                <div class="knowledge-item"><div class="knowledge-rank blue">3</div><div class="knowledge-main"><strong>有理数 · 混合运算</strong><span>整体表现稳定，可尝试中等题</span><div class="mini-progress blue-bar"><i style="width:76%"></i></div></div><div class="score normal"><b>76</b><small>正在巩固</small></div><button class="round-go" data-view="learn">→</button></div>
+              </div>
+            </article>
+
+            <article class="panel task-panel">
+              <div class="panel-head"><div><h3>今日学习任务</h3><p>完成任务可以获得积分</p></div><span class="task-count">2/3</span></div>
+              <label class="task done"><input type="checkbox" checked disabled><span class="check">✓</span><span><strong>完成一组专项练习</strong><small>已获得 5 积分</small></span><em>+5</em></label>
+              <label class="task done"><input type="checkbox" checked disabled><span class="check">✓</span><span><strong>订正一道历史错题</strong><small>已获得 3 积分</small></span><em>+3</em></label>
+              <label class="task"><input type="checkbox"><span class="check"></span><span><strong>再完成一组有效练习</strong><small>还差 3 道题</small></span><em>+5</em></label>
+              <button class="btn soft full" data-view="learn">继续完成任务</button>
+            </article>
+          </div>
+
+          <article class="panel recent-panel">
+            <div class="panel-head"><div><h3>最近学习</h3><p>回顾你的学习足迹</p></div><button class="text-btn" data-view="records">全部记录 →</button></div>
+            <div class="recent-row"><span class="subject-icon math">∑</span><div><strong>一元一次方程专项练习</strong><small>数学 · 七年级上册</small></div><span class="tag medium">中等</span><div class="result"><strong>4 / 5</strong><small>正确题数</small></div><time>今天 14:32</time><button>›</button></div>
+            <div class="recent-row"><span class="subject-icon book-icon">文</span><div><strong>整式的加减薄弱点诊断</strong><small>数学 · 七年级上册</small></div><span class="tag easy">简单</span><div class="result"><strong>3 / 5</strong><small>正确题数</small></div><time>昨天 19:16</time><button>›</button></div>
+          </article>
+        </section>
+
+        <!-- 智能学习 -->
+        <section class="view" id="view-learn">
+          <div class="learn-layout">
+            <section class="learn-main">
+              <div class="stepper"><div class="step active"><b>1</b><span>描述问题</span></div><i></i><div class="step"><b>2</b><span>智能诊断</span></div><i></i><div class="step"><b>3</b><span>针对练习</span></div><i></i><div class="step"><b>4</b><span>学习反馈</span></div></div>
+
+              <article class="panel ask-card" id="askCard">
+                <div class="ai-heading"><span>✦</span><div><h2>今天想解决什么学习问题？</h2><p>可以输入不会的题目、学习问题，或者直接描述你的薄弱点。</p></div></div>
+                <div class="context-row"><button>初中七年级⌄</button><button>数学⌄</button><button>人教版 · 上册⌄</button></div>
+                <div class="input-tabs"><button class="active">薄弱点描述</button><button>题目或问题</button></div>
+                <div class="smart-input">
+                  <textarea id="studyInput" placeholder="例如：我做一元一次方程时，经常在去括号和移项处出错……">我做一元一次方程时，经常在移项后把符号写错。</textarea>
+                  <div><span>建议描述遇到问题的知识点和具体表现</span><span><b id="inputCount">24</b>/300</span></div>
+                </div>
+                <div class="quick-prompts"><span>试试这样问：</span><button>我不会去括号</button><button>移项为什么要变号？</button><button>帮我生成方程练习</button></div>
+                <button class="btn primary analyse-btn" id="analyseBtn">✦ 开始智能诊断</button>
+              </article>
+
+              <article class="panel diagnosis-card hidden" id="diagnosisCard">
+                <div class="diagnosis-title"><div class="success-mark">✓</div><div><h2>诊断完成</h2><p>已结合你的历史画像分析本次学习问题</p></div><span>AI 生成</span></div>
+                <div class="diagnosis-summary">
+                  <div><small>识别知识点</small><strong>一元一次方程 · 移项</strong></div>
+                  <div><small>当前掌握度</small><strong class="red-text">55 分</strong></div>
+                  <div><small>学习状态</small><strong class="status-red">基础薄弱</strong></div>
+                </div>
+                <div class="diagnosis-body"><h4>诊断说明</h4><p>你已经理解移项的基本含义，但在将项移到等号另一侧时，容易漏掉符号变化。建议先通过简单题巩固“移项要变号”的规则。</p><h4>推荐方案</h4><ul><li>完成 3 道简单移项练习</li><li>重点检查每一步的符号变化</li><li>完成后根据表现自动调整难度</li></ul></div>
+                <button class="btn primary" id="startPractice">开始针对性练习 →</button>
+              </article>
+
+              <article class="panel practice-card hidden" id="practiceCard">
+                <div class="practice-head"><div><span>针对性练习</span><h2>一元一次方程 · 移项</h2></div><div class="question-progress"><strong id="questionNo">1</strong> / 3<div class="progress"><i id="questionBar" style="width:33%"></i></div></div></div>
+                <div class="difficulty-line"><span class="tag easy">简单</span><span>选择正确答案</span><button>☆ 收藏</button></div>
+                <div class="question-box"><span>题目 1</span><h3>解方程：3x + 5 = 2x + 11</h3></div>
+                <div class="options" id="answerOptions">
+                  <button data-answer="A"><b>A</b>x = 4</button><button data-answer="B"><b>B</b>x = 5</button><button data-answer="C"><b>C</b>x = 6</button><button data-answer="D"><b>D</b>x = 7</button>
+                </div>
+                <div class="answer-actions"><button class="text-btn">查看提示</button><button class="btn primary" id="submitAnswer" disabled>提交答案</button></div>
+                <div class="feedback hidden" id="feedback"><div class="feedback-title"><span>✓</span><strong>回答正确！</strong><em>掌握度 +3</em></div><p>将 2x 移到等号左侧，将 5 移到等号右侧：3x - 2x = 11 - 5，所以 x = 6。</p><button class="btn primary" id="nextQuestion">下一题 →</button></div>
+              </article>
+            </section>
+
+            <aside class="learn-side">
+              <article class="panel current-profile"><div class="panel-head"><h3>当前学习画像</h3><button class="text-btn" data-view="profile">详情</button></div><div class="profile-course"><span>数</span><div><strong>初中数学</strong><small>七年级 · 人教版</small></div></div><div class="profile-metric"><span>一元一次方程掌握度</span><strong>55%</strong></div><div class="mini-progress"><i style="width:55%"></i></div><div class="profile-note"><span>!</span> 近期主要错因：计算错误</div></article>
+              <article class="panel usage-card"><div class="panel-head"><h3>今日使用</h3><span class="normal-user">普通用户</span></div><div class="usage-row"><span>练习生成</span><strong>1 / 5</strong></div><div class="progress"><i style="width:20%"></i></div><div class="usage-row"><span>详细错因分析</span><strong>需 10 积分</strong></div><button class="btn vip-btn full" data-view="vip">♛ 升级 VIP 解锁更多</button></article>
+              <article class="tip-card"><span>灯</span><div><strong>学习小贴士</strong><p>做方程题时，每次移项后都圈出发生变化的符号，可以有效减少粗心错误。</p></div></article>
+            </aside>
+          </div>
+        </section>
+
+        <!-- 学习画像 -->
+        <section class="view" id="view-profile">
+          <div class="profile-banner"><div><span class="avatar big">林</span><div><h2>林小智的学习画像</h2><p>初中 · 七年级 · 数学 · 薄弱点补习</p><div class="profile-tags"><span>连续学习 5 天</span><span>累计完成 86 题</span></div></div></div><button class="btn white" data-view="settings">编辑基础信息</button></div>
+          <div class="profile-overview">
+            <article class="panel mastery-card"><div class="donut"><span><strong>72</strong><small>综合掌握度</small></span></div><div><h3>整体处于“正在巩固”阶段</h3><p>近 7 天综合掌握度提升了 6 分，继续保持！</p><div class="legend"><span><i class="lg-red"></i>基础薄弱 1</span><span><i class="lg-amber"></i>正在巩固 2</span><span><i class="lg-green"></i>掌握良好 2</span></div></div></article>
+            <article class="panel trend-card"><div class="panel-head"><div><h3>近 7 天掌握度趋势</h3><p>持续练习正在带来稳定提升</p></div><strong class="up">↗ +6</strong></div><div class="chart"><div class="grid-lines"></div><svg viewBox="0 0 500 150" preserveAspectRatio="none"><defs><linearGradient id="area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3975e8" stop-opacity=".24"/><stop offset="1" stop-color="#3975e8" stop-opacity="0"/></linearGradient></defs><path d="M10,118 C60,108 75,112 105,95 S160,90 190,77 S245,82 275,62 S330,69 360,49 S420,54 490,28 L490,145 L10,145Z" fill="url(#area)"/><path d="M10,118 C60,108 75,112 105,95 S160,90 190,77 S245,82 275,62 S330,69 360,49 S420,54 490,28" fill="none" stroke="#3975e8" stroke-width="4" stroke-linecap="round"/></svg><div class="chart-labels"><span>7/10</span><span>7/11</span><span>7/12</span><span>7/13</span><span>7/14</span><span>7/15</span><span>今天</span></div></div></article>
+          </div>
+          <article class="panel knowledge-map"><div class="panel-head"><div><h3>知识点掌握情况</h3><p>根据练习表现动态更新</p></div><div class="filter-chips"><button class="active">全部</button><button>基础薄弱</button><button>正在巩固</button><button>掌握良好</button></div></div>
+            <div class="knowledge-table"><div class="table-head"><span>知识点</span><span>掌握度</span><span>学习状态</span><span>答题情况</span><span>最近学习</span><span></span></div>
+              <div class="table-row"><span><i class="dot red-dot"></i><b>一元一次方程 · 移项</b><small>第三章 一元一次方程</small></span><span><div class="mini-progress"><i style="width:55%"></i></div><b>55</b></span><span class="status-red">基础薄弱</span><span><b>12 / 20</b><small>正确率 60%</small></span><span>今天 14:32</span><button data-view="learn">去练习 →</button></div>
+              <div class="table-row"><span><i class="dot amber-dot"></i><b>整式的加减 · 去括号</b><small>第二章 整式的加减</small></span><span><div class="mini-progress amber-bar"><i style="width:68%"></i></div><b>68</b></span><span class="status-amber">正在巩固</span><span><b>15 / 22</b><small>正确率 68%</small></span><span>昨天 19:16</span><button data-view="learn">去练习 →</button></div>
+              <div class="table-row"><span><i class="dot amber-dot"></i><b>有理数 · 混合运算</b><small>第一章 有理数</small></span><span><div class="mini-progress amber-bar"><i style="width:76%"></i></div><b>76</b></span><span class="status-amber">正在巩固</span><span><b>18 / 23</b><small>正确率 78%</small></span><span>7月14日</span><button data-view="learn">去练习 →</button></div>
+              <div class="table-row"><span><i class="dot green-dot"></i><b>有理数 · 数轴</b><small>第一章 有理数</small></span><span><div class="mini-progress green-bar"><i style="width:88%"></i></div><b>88</b></span><span class="status-green">掌握良好</span><span><b>17 / 19</b><small>正确率 89%</small></span><span>7月12日</span><button data-view="learn">去练习 →</button></div>
+            </div>
+          </article>
+          <div class="two-grid"><article class="panel"><div class="panel-head"><div><h3>常见错因</h3><p>最近 30 道错题分析</p></div></div><div class="error-bars"><div><span>计算错误</span><i><b style="width:42%"></b></i><strong>42%</strong></div><div><span>方法错误</span><i><b style="width:28%"></b></i><strong>28%</strong></div><div><span>知识点不会</span><i><b style="width:19%"></b></i><strong>19%</strong></div><div><span>审题错误</span><i><b style="width:11%"></b></i><strong>11%</strong></div></div></article><article class="panel suggestion-card"><div class="panel-head"><div><h3>AI 学习建议</h3><p>基于当前画像生成</p></div><span>✦</span></div><h4>本周建议优先巩固移项与去括号</h4><p>你的主要问题集中在运算符号处理。建议每天完成一组 3～5 题的专项练习，答题时将符号变化单独标记。</p><button class="btn soft" data-view="learn">按照建议开始练习</button></article></div>
+        </section>
+
+        <!-- 学习记录 -->
+        <section class="view" id="view-records">
+          <div class="summary-strip"><div><span>本周学习</span><strong>5<small>天</small></strong></div><div><span>完成练习</span><strong>8<small>组</small></strong></div><div><span>完成题目</span><strong>42<small>题</small></strong></div><div><span>平均正确率</span><strong>78<small>%</small></strong></div></div>
+          <article class="panel record-panel"><div class="panel-head"><div><h3>历史学习记录</h3><p>记录每一次练习和成长</p></div><div class="record-filters"><button>全部类型⌄</button><button>最近 30 天⌄</button><button>⌕ 搜索</button></div></div>
+            <div class="timeline">
+              <div class="date-label">今天 · 7月16日</div>
+              <div class="timeline-item"><span class="time">14:32</span><i class="timeline-dot"></i><div class="record-card"><span class="subject-icon math">∑</span><div class="record-info"><div><strong>一元一次方程专项练习</strong><span class="tag medium">中等</span></div><p>知识点：移项 · 5 道题 · 用时 12 分钟</p></div><div class="record-score good"><strong>4 / 5</strong><small>正确率 80%</small></div><div class="mastery-change"><small>掌握度变化</small><strong>52 → 55 <em>+3</em></strong></div><button>查看详情 ›</button></div></div>
+              <div class="timeline-item"><span class="time">09:10</span><i class="timeline-dot green-timeline"></i><div class="record-card"><span class="subject-icon correction">✓</span><div class="record-info"><div><strong>历史错题订正</strong><span class="tag correction-tag">订正</span></div><p>知识点：整式的加减 · 已订正 2 道题</p></div><div class="record-score"><strong>2 / 2</strong><small>全部订正</small></div><div class="point-gain">◆ +6 积分</div><button>查看详情 ›</button></div></div>
+              <div class="date-label">昨天 · 7月15日</div>
+              <div class="timeline-item"><span class="time">19:16</span><i class="timeline-dot"></i><div class="record-card"><span class="subject-icon diagnosis-icon">◎</span><div class="record-info"><div><strong>整式的加减薄弱点诊断</strong><span class="tag easy">诊断</span></div><p>识别薄弱点：去括号 · 符号处理</p></div><div class="record-score warn"><strong>3 / 5</strong><small>正确率 60%</small></div><div class="mastery-change"><small>诊断结果</small><strong class="status-amber">正在巩固</strong></div><button>查看详情 ›</button></div></div>
+            </div>
+          </article>
+          <article class="report-banner"><div class="report-art">▥<span>AI</span></div><div><span class="eyebrow">阶段性学情报告</span><h3>生成你的本周学习报告</h3><p>总结掌握度变化、高频错因和下一阶段学习建议。</p></div><div class="report-cost"><span>普通用户需</span><strong>◆ 20 积分</strong></div><button class="btn primary" id="reportBtn">生成报告</button></article>
+        </section>
+
+        <!-- 积分中心 -->
+        <section class="view" id="view-points">
+          <div class="points-hero"><div><span>我的可用积分</span><strong><i>◆</i><b id="heroPoints">126</b></strong><p>坚持有效学习，积分可以兑换更多学习能力</p></div><div class="points-hero-stat"><span><small>累计获得</small><b>284</b></span><span><small>累计使用</small><b>158</b></span><span><small>今日获得</small><b>7</b></span></div><div class="coin-stack">◆<i>◆</i><b>◆</b></div></div>
+          <div class="points-grid"><article class="panel mission-panel"><div class="panel-head"><div><h3>今日积分任务</h3><p>今日还可以获得 15 积分</p></div><span>2 / 4 已完成</span></div>
+            <div class="mission done"><span class="mission-icon">✓</span><div><strong>每日首次登录</strong><small>每天登录即可完成</small></div><em>+2</em><button disabled>已领取</button></div>
+            <div class="mission done"><span class="mission-icon">✓</span><div><strong>完成一组有效练习</strong><small>完成整组练习并提交答案</small></div><em>+5</em><button disabled>已领取</button></div>
+            <div class="mission"><span class="mission-icon blue">练</span><div><strong>再完成一组有效练习</strong><small>今日最多奖励 3 组</small></div><em>+5</em><button data-view="learn">去完成</button></div>
+            <div class="mission"><span class="mission-icon orange">改</span><div><strong>完成一道错题订正</strong><small>订正正确后获得奖励</small></div><em>+3</em><button data-view="records">去完成</button></div>
+          </article><article class="panel streak-card"><div class="panel-head"><div><h3>连续学习</h3><p>再坚持 2 天可获得奖励</p></div><strong>5 天</strong></div><div class="week"><div class="checked">一<span>✓</span></div><div class="checked">二<span>✓</span></div><div class="checked">三<span>✓</span></div><div class="checked">四<span>✓</span></div><div class="checked">五<span>✓</span></div><div>六<span></span></div><div>日<span>+10</span></div></div><div class="streak-tip">连续学习 7 天，奖励 <strong>10 积分</strong></div></article></div>
+          <article class="panel exchange-panel"><div class="panel-head"><div><h3>积分兑换</h3><p>用学习积累解锁更多能力</p></div><span>当前 126 积分</span></div><div class="exchange-grid">
+            <div class="exchange-card"><span class="exchange-icon blue">＋</span><div><h4>额外一组练习</h4><p>突破普通用户每日次数限制</p></div><strong>◆ 10</strong><button class="exchange-btn" data-cost="10" data-name="额外一组练习">立即兑换</button></div>
+            <div class="exchange-card"><span class="exchange-icon purple">析</span><div><h4>详细错因分析</h4><p>查看完整步骤和错误原因</p></div><strong>◆ 10</strong><button class="exchange-btn" data-cost="10" data-name="详细错因分析">立即兑换</button></div>
+            <div class="exchange-card featured"><i>推荐</i><span class="exchange-icon orange">报</span><div><h4>阶段学习报告</h4><p>掌握度、错因和学习建议总结</p></div><strong>◆ 20</strong><button class="exchange-btn" data-cost="20" data-name="阶段学习报告">立即兑换</button></div>
+          </div></article>
+          <article class="panel flow-panel"><div class="panel-head"><div><h3>积分明细</h3><p>最近的积分获取和使用记录</p></div><button class="text-btn">全部明细 →</button></div><div class="flow-row"><span class="flow-icon plus">＋</span><div><strong>完成有效练习</strong><small>今天 14:45 · 一元一次方程专项练习</small></div><b class="plus-text">+5</b><em>余额 126</em></div><div class="flow-row"><span class="flow-icon plus">＋</span><div><strong>每日首次登录</strong><small>今天 08:42</small></div><b class="plus-text">+2</b><em>余额 121</em></div><div class="flow-row"><span class="flow-icon minus">－</span><div><strong>兑换详细错因分析</strong><small>昨天 19:26 · 整式的加减</small></div><b class="minus-text">-10</b><em>余额 119</em></div></article>
+        </section>
+
+        <!-- 会员中心 -->
+        <section class="view" id="view-vip">
+          <div class="vip-hero"><div class="vip-copy"><span class="vip-label">智学伴 VIP</span><h2>让每一次学习，都更懂你</h2><p>解锁更深入的错因分析、更完整的学习画像和更持续的个性化服务。</p><div class="vip-benefits"><span>✓ 更多针对性练习</span><span>✓ 完整学情报告</span><span>✓ 详细错因分析</span></div></div><div class="vip-card-art"><div class="vip-card-inner"><span>♛ ZHIXUEBAN</span><strong>VIP</strong><small>专属个性化学习服务</small><i>•••• 2026</i></div></div></div>
+          <article class="panel compare-panel"><div class="panel-head centered"><div><h2>选择适合你的学习方式</h2><p>免费用户可以正常学习，VIP 提供更深入、更持续的个性化服务</p></div></div><div class="compare-table"><div class="compare-row compare-head"><span>功能权益</span><strong>普通用户</strong><strong class="vip-col">♛ VIP 用户</strong></div><div class="compare-row"><span>基础学情诊断</span><b>✓ 支持</b><b class="vip-col">✓ 支持</b></div><div class="compare-row"><span>每日练习生成</span><b>5 组 / 天</b><b class="vip-col">20 组 / 天</b></div><div class="compare-row"><span>基础答案解析</span><b>✓ 支持</b><b class="vip-col">✓ 支持</b></div><div class="compare-row"><span>详细错因分析</span><b>10 积分 / 次</b><b class="vip-col strong-check">✓ 直接使用</b></div><div class="compare-row"><span>学习历史记录</span><b>最近 10 条</b><b class="vip-col strong-check">✓ 全部记录</b></div><div class="compare-row"><span>阶段性学情报告</span><b>20 积分 / 次</b><b class="vip-col strong-check">✓ 直接生成</b></div><div class="compare-row"><span>个性化练习</span><b>基础画像生成</b><b class="vip-col strong-check">✓ 完整画像生成</b></div></div></article>
+          <section class="plan-section"><div class="section-title"><h2>开通 VIP</h2><p>课程项目采用模拟开通，不产生真实费用</p></div><div class="plan-card"><div class="plan-main"><span class="best-choice">推荐套餐</span><div><h3>30 天 VIP 会员</h3><p>完整体验智学伴个性化学习服务</p></div><div class="price"><small>模拟价格</small><strong>¥ <b>19</b>.9</strong></div></div><div class="plan-list"><span>✓ 每日 20 组智能练习</span><span>✓ 详细错因分析</span><span>✓ 完整历史记录</span><span>✓ 阶段性学情报告</span></div><button class="btn vip-open" id="openVip">立即模拟开通</button><small class="plan-note">点击后将生成模拟订单并开通 30 天 VIP</small></div></section>
+          <article class="vip-note"><span>i</span><div><strong>我们的会员原则</strong><p>基础诊断、练习和答案解析始终向免费用户开放。VIP 收费的重点是更深入的分析和更持续的个性化服务，而不是限制正常学习。</p></div></article>
+        </section>
+
+        <!-- 基础设置 -->
+        <section class="view" id="view-settings">
+          <article class="panel settings-card"><div class="settings-head"><span class="avatar big">林</span><div><h2>基础学习信息</h2><p>这些信息将帮助系统生成符合你学习阶段的内容</p></div></div><form id="settingsForm"><label>你的学段<div class="segment"><button type="button">小学</button><button type="button" class="active">初中</button><button type="button">高中</button><button type="button">大学</button></div></label><div class="form-grid"><label>年级<select><option>七年级</option><option>八年级</option><option>九年级</option></select></label><label>常用学科 / 课程<select><option>数学</option><option>语文</option><option>英语</option></select></label></div><label>学习目标<div class="goal-options"><button type="button">日常巩固</button><button type="button" class="active">薄弱点补习</button><button type="button">考试复习</button></div></label><div class="default-book">✓ 中小学课程默认使用人教版，无需单独选择教材版本</div><button class="btn primary" type="submit">保存基础信息</button></form></article>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="modalBackdrop">
+    <div class="modal" id="modal"><button class="modal-close" id="modalClose">×</button><div class="modal-icon" id="modalIcon">✓</div><h2 id="modalTitle">操作成功</h2><p id="modalText"></p><button class="btn primary full" id="modalConfirm">知道了</button></div>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="app.js"></script>
+</body>
+</html>

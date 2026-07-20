@@ -5,10 +5,11 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from backend.agents.memory.short_term_memory import get_short_term_memory
+from backend.agents.tools.result import ToolExecutionError
 
 
 class QueryMemoryInput(BaseModel):
-    limit: int = Field(default=5, description="返回的记忆条数")
+    limit: int = Field(default=5, ge=1, le=20, description="返回的记忆条数")
 
 
 class QueryMemoryTool(BaseTool):
@@ -22,10 +23,12 @@ class QueryMemoryTool(BaseTool):
             loop = asyncio.get_event_loop()
             return loop.run_until_complete(self._arun(user_id=user_id, session_id=session_id, limit=limit))
         except RuntimeError:
-            return "【记忆查询】查询失败：无法在当前事件循环中执行"
+            raise ToolExecutionError("SYNC_TOOL_UNAVAILABLE", "当前环境不能同步查询记忆")
 
     async def _arun(self, user_id: Optional[int] = None, session_id: Optional[int] = None, limit: int = 5) -> str:
         """异步执行记忆查询"""
+        if user_id is None or session_id is None:
+            raise ToolExecutionError("MISSING_USER_CONTEXT", "缺少当前用户或会话身份")
         try:
             memory = await get_short_term_memory()
             memories = await memory.get_latest_memories(user_id, session_id, limit)
@@ -43,4 +46,4 @@ class QueryMemoryTool(BaseTool):
 
             return "【记忆查询】找到以下记忆：\n" + "\n".join(lines)
         except Exception as e:
-            return f"【记忆查询】查询失败：{str(e)}"
+            raise ToolExecutionError("MEMORY_QUERY_FAILED", "记忆查询失败") from e

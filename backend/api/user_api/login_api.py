@@ -3,10 +3,10 @@ from pydantic import BaseModel, Field
 
 from backend.schemas.token_schema import Token
 from backend.schemas.response.user_response import UserResponse
-from backend.services.login_service.login_service import loginService
+from backend.services.login_service.login_service import LoginService
 
 login_router = APIRouter(prefix='/login', tags=['login'])
-login_service = loginService()
+login_service = LoginService()
 
 
 class LoginRequest(BaseModel):

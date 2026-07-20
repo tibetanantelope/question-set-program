@@ -85,21 +85,35 @@ class VectorStoreManager(metaclass=singleMeta):
             logger.error("Error updating document: %s", e, exc_info=True)
             return False
 
-    async def query(self, query_text: str, user_id: int = None, top_k: int = 5):
-        """Query the vector store, optionally filtered by user_id."""
+    async def query(
+        self,
+        query_text: str,
+        user_id: int | None = None,
+        top_k: int = 3,
+    ) -> list[dict]:
+        """Retrieve relevant memories without making an additional chat LLM call."""
+        if not query_text.strip():
+            return []
+
         filters = None
         if user_id is not None:
             filters = MetadataFilters(
                 filters=[ExactMatchFilter(key="user_id", value=user_id)]
             )
 
-        query_engine = self._index.as_query_engine(
+        retriever = self._index.as_retriever(
             similarity_top_k=top_k,
             filters=filters,
-            embed_model=self.embed_model,
         )
         loop = asyncio.get_event_loop()
-        response = await loop.run_in_executor(
-            None, partial(query_engine.query, query_text)
+        nodes = await loop.run_in_executor(
+            None, partial(retriever.retrieve, query_text)
         )
-        return response
+        return [
+            {
+                "text": node.node.get_content(),
+                "score": node.score,
+                "metadata": node.node.metadata or {},
+            }
+            for node in nodes
+        ]

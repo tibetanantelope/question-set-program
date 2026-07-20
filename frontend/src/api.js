@@ -26,7 +26,7 @@ async function parseJsonResponse(response) {
   }
 
   if (!response.ok) {
-    const message = payload?.detail || payload?.msg || `请求失败：${response.status}`
+    const message = payload?.message || payload?.detail || payload?.msg || `请求失败：${response.status}`
     throw new Error(message)
   }
 

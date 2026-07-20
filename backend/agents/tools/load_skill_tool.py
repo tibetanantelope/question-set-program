@@ -4,10 +4,11 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 
 from backend.agents.skills import load_skill
+from backend.agents.tools.result import ToolExecutionError
 
 
 class LoadSkillInput(BaseModel):
-    name: str = Field(description="要加载的 Skill 名，必须在可用 Skill 列表中")
+    name: str = Field(min_length=1, max_length=64, description="要加载的 Skill 名，必须在可用 Skill 列表中")
 
 
 class LoadSkillTool(BaseTool):
@@ -24,9 +25,9 @@ class LoadSkillTool(BaseTool):
             body = load_skill(name)
             return f"【Skill: {name}】已加载，以下内容即该 Skill 的完整剧本：\n{body}"
         except FileNotFoundError as e:
-            return f"【Skill 加载失败】{e}"
+            raise ToolExecutionError("SKILL_NOT_FOUND", f"未找到Skill：{name}") from e
         except Exception as e:
-            return f"【Skill 加载失败】{str(e)}"
+            raise ToolExecutionError("SKILL_LOAD_FAILED", "Skill加载失败") from e
 
     async def _arun(self, name: str) -> str:
         return self._run(name)

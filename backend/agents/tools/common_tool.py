@@ -5,7 +5,7 @@ from langchain_core.tools import BaseTool
 from pydantic import BaseModel, Field
 
 class CommonInput(BaseModel):
-    query : str = Field(description="用户的查询内容")
+    query: str = Field(min_length=1, max_length=2000, description="用户的查询内容")
 
 class CommonTool(BaseTool):
     name :str = "common_tool"

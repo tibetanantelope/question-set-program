@@ -3,10 +3,11 @@ from typing import Type
 from backend.agents.agent.extract_agent import async_extract_tool, extract_tool
 from pydantic import BaseModel, Field
 from langchain_core.tools import BaseTool
+from backend.agents.tools.result import ToolExecutionError
 
 
 class ExtractKnowledgeInput(BaseModel):
-    text: str = Field(description="用户输入的题目或文本内容")
+    text: str = Field(min_length=1, max_length=2000, description="用户输入的题目或文本内容")
 
 class ExtractKnowledgeTool(BaseTool):
     name : str = "extract_tool"
@@ -25,7 +26,7 @@ class ExtractKnowledgeTool(BaseTool):
                 return "【知识点提取】未能提取到知识点"
 
         except Exception as e:
-            return f"【知识点提取】提取知识点失败：{str(e)}"
+            raise ToolExecutionError("KNOWLEDGE_EXTRACTION_FAILED", "知识点提取失败") from e
 
 
     async def _arun(self, text: str) -> str:
@@ -40,4 +41,4 @@ class ExtractKnowledgeTool(BaseTool):
             else:
                 return "【知识点提取】未能提取到知识点"
         except Exception as e:
-            return f"【知识点提取】提取知识点失败：{str(e)}"
+            raise ToolExecutionError("KNOWLEDGE_EXTRACTION_FAILED", "知识点提取失败") from e

@@ -8,6 +8,7 @@ from backend.agents.memory.long_term_memory import LongTermMemory
 from backend.agents.memory.short_term_memory import get_short_term_memory
 from backend.dao.user_profile_mapper import get_user_profile_mapper
 from backend.schemas.request.ltm_request import LTMRequest
+from backend.agents.tools.result import ToolExecutionError
 
 
 class UserProfileSaveInput(BaseModel):
@@ -45,7 +46,7 @@ class UserProfileSaveTool(BaseTool):
                 )
             )
         except RuntimeError:
-            return "【用户画像】保存失败：无法在当前事件循环中执行"
+            raise ToolExecutionError("SYNC_TOOL_UNAVAILABLE", "当前环境不能同步保存用户画像")
 
     async def _arun(
         self,
@@ -56,7 +57,7 @@ class UserProfileSaveTool(BaseTool):
         preferences: Optional[dict] = None,
     ) -> str:
         if user_id is None:
-            return "【用户画像】保存失败：缺少 user_id"
+            raise ToolExecutionError("MISSING_USER_CONTEXT", "缺少当前用户身份")
         try:
             mapper = await get_user_profile_mapper()
             stm = await get_short_term_memory()
@@ -72,4 +73,4 @@ class UserProfileSaveTool(BaseTool):
             await ltm.add_or_update(request)
             return f"【用户画像】已保存用户 {user_id} 的画像，请查询后确认"
         except Exception as e:
-            return f"【用户画像】保存失败：{str(e)}"
+            raise ToolExecutionError("PROFILE_SAVE_FAILED", "用户画像保存失败") from e

@@ -1,8 +1,9 @@
 ﻿import os
-from typing import TypedDict,Any
+from typing import Annotated, TypedDict, Any
 
 from backend.env import load_backend_env
-from langchain_core.messages import ToolMessage
+from langchain_core.messages import BaseMessage
+from langgraph.graph.message import add_messages
 
 load_backend_env()
 
@@ -47,7 +48,8 @@ class GraphState(TypedDict):
     thought: str
     action: str
     action_args: dict
-    messages: list[ToolMessage]  # 鐢ㄤ簬瀛樺墠鍑犺疆鐨刼bservation
+    tool_call_id: str
+    messages: Annotated[list[BaseMessage], add_messages]
     round: int
 
     final_result: str

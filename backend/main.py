@@ -4,7 +4,9 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.middleware.logging import setup_logging, LoggingMiddleware
 from backend.api.user_api.agent_api import agent_router
 from backend.api.user_api.login_api import login_router
+from backend.api.health_api import health_router
 from backend.core.hooks import startup_event, shutdown_event
+from backend.middleware.exception import register_exception_handlers
 
 setup_logging()
 
@@ -15,6 +17,7 @@ app = FastAPI(
 )
 
 app.add_middleware(LoggingMiddleware)
+register_exception_handlers(app)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -29,6 +32,7 @@ app.on_event("shutdown")(shutdown_event)
 
 app.include_router(agent_router)
 app.include_router(login_router)
+app.include_router(health_router)
 
 if __name__ == "__main__":
     import uvicorn
