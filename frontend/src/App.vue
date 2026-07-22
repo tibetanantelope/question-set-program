@@ -124,7 +124,7 @@
 import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { analyseStream, getToken, login, register, setToken } from './api'
-import { getMyProfile, saveMyProfile, getDiagnosticStatus, startDiagnostic, submitDiagnostic, skipDiagnostic } from './api/profile'
+import { getMyMasteries, getMyProfile, saveMyProfile, getDiagnosticStatus, startDiagnostic, submitDiagnostic, skipDiagnostic } from './api/profile'
 
 const authMode=ref('login'), authLoading=ref(false), analysisLoading=ref(false), token=ref(getToken()), currentView=ref('home'), mobileMenu=ref(false), messages=ref([])
 const authForm=reactive({username:'',password:'',confirmPassword:''})
@@ -132,6 +132,7 @@ const requestForm=reactive({userId:1,sessionId:1,text:''})
 const settings=reactive({stage:'',grade:'',subject:'',goal:'',days:5,target:3})
 const profileLoaded=ref(false), profileLoading=ref(false), realProfile=ref(null)
 const diagnostic=reactive({status:'',diagnosticId:null,questions:[],answers:[],loading:false,submitted:false})
+const masteryData=ref([]), masteryLoading=ref(false)
 const isAuthed=computed(()=>Boolean(token.value))
 const navItems=[{key:'home',label:'学习首页',icon:'⌂',group:'学习空间'},{key:'learn',label:'智能学习',icon:'✦'},{key:'profile',label:'学习画像',icon:'◎'},{key:'records',label:'学习记录',icon:'▤',badge:'8'},{key:'points',label:'积分中心',icon:'◆',group:'成长与权益'},{key:'vip',label:'会员中心',icon:'♛'},{key:'settings',label:'基础信息设置',icon:'⚙',group:'个人设置'}]
 const metas={home:['学习首页','下午好，继续保持今天的学习节奏吧'],learn:['智能学习','描述你的问题，智学伴会为你诊断并生成针对性练习'],profile:['学习画像','了解每个知识点的掌握情况和成长趋势'],records:['学习记录','回顾每一次练习和进步'],points:['积分中心','坚持有效学习，用积分兑换更多学习能力'],vip:['会员中心','解锁更深入、更持续的个性化学习服务'],settings:['基础信息设置','完善信息，让学习内容更适合你']}
@@ -153,11 +154,18 @@ const currentGrades=computed(()=>gradeOptions[settings.stage]||[])
 const currentSubjects=computed(()=>subjectOptions[settings.stage]||[])
 function onStageChange(stage){settings.stage=stage;settings.grade='';settings.subject=''}
 
-function go(view){currentView.value=view;mobileMenu.value=false;window.scrollTo({top:0,behavior:'smooth'});if(view==='settings')loadProfile()}
+function go(view){currentView.value=view;mobileMenu.value=false;window.scrollTo({top:0,behavior:'smooth'});if(view==='settings')loadProfile();if(view==='profile')loadMasteries()}
 
 async function loadProfile(){if(!token.value)return;profileLoading.value=true;try{const resp=await getMyProfile();const p=resp?.data?.profile;realProfile.value=p;if(p){settings.stage=stageMap[p.stage]||p.stage;settings.grade=p.grade||'';settings.subject=p.subject||'';settings.goal=goalMap[p.learning_goal]||p.learning_goal;settings.days=p.weekly_study_days||5;settings.target=p.daily_target_groups||3;profileLoaded.value=true;await loadDiagnosticStatus()}else{profileLoaded.value=false}}catch(e){console.error('加载画像失败',e)}finally{profileLoading.value=false}}
 
 async function loadDiagnosticStatus(){try{const resp=await getDiagnosticStatus();diagnostic.status=resp?.data?.status||'';diagnostic.diagnosticId=resp?.data?.diagnostic_id||null}catch(e){console.error('加载诊断状态失败',e)}}
+
+async function loadMasteries(){if(!token.value)return;masteryLoading.value=true;try{const resp=await getMyMasteries();masteryData.value=resp?.data||[]}catch(e){console.error('加载掌握度失败',e)}finally{masteryLoading.value=false}}
+
+const masteryAvg=computed(()=>{const arr=masteryData.value;if(!arr.length)return 0;const sum=arr.reduce((s,m)=>s+m.mastery_score,0);return Math.round(sum/arr.length)})
+const masteryWeak=computed(()=>masteryData.value.filter(m=>m.learning_status==='weak').length)
+const masteryConsolidating=computed(()=>masteryData.value.filter(m=>m.learning_status==='consolidating').length)
+const masteryMastered=computed(()=>masteryData.value.filter(m=>m.learning_status==='mastered').length)
 async function submitAuth(){if(authForm.username.length<6||authForm.password.length<6){ElMessage.warning('用户名和密码都需要 6 到 20 位');return}if(authMode.value==='register'&&authForm.password!==authForm.confirmPassword){ElMessage.warning('两次输入的密码不一致');return}authLoading.value=true;try{if(authMode.value==='register'){const user=await register(authForm.username,authForm.password);if(user?.id)requestForm.userId=user.id;ElMessage.success('注册成功，请登录');authMode.value='login';authForm.password='';authForm.confirmPassword='';return}const payload=await login(authForm.username,authForm.password);token.value=payload.access_token;ElMessage.success('登录成功，欢迎回来');await loadProfile();if(!realProfile.value){ElMessage.warning('请先完善学习信息');go('settings')}}catch(error){ElMessage.error(error.message||'认证失败')}finally{authLoading.value=false}}
 function clearSession(){setToken('');token.value='';realProfile.value=null;profileLoaded.value=false;diagnostic.status='';diagnostic.questions=[];diagnostic.answers=[];diagnostic.submitted=false;currentView.value='home';ElMessage.success('已安全退出')}
 function addMessage(role,content,title=role==='assistant'?'智学伴 AI':'你'){const msg={id:`${Date.now()}-${Math.random()}`,role,title,content};messages.value.push(msg);return msg}

@@ -36,6 +36,18 @@ async def save_my_profile(
     return success(summary.model_dump(), message='画像保存成功')
 
 
+# ──────────────── 掌握度 ────────────────
+
+@profile_router.get('/masteries')
+async def get_my_masteries(
+        user: User = Depends(get_current_user),
+        service: DiagnosticService = Depends(get_diagnostic_service),
+):
+    """查询当前学生最近一次诊断的知识点掌握度。"""
+    data = await service.get_latest_masteries(user.id)
+    return success(data)
+
+
 # ──────────────── 首次诊断 ────────────────
 
 @profile_router.get('/diagnostic/status')

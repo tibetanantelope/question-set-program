@@ -422,6 +422,74 @@ class DiagnosticService:
         return self._profile_mapper
 
     # ------------------------------------------------------------------
+    # 查询掌握度（从最近一次诊断结果）
+    # ------------------------------------------------------------------
+
+    async def get_latest_masteries(self, user_id: int) -> list[dict]:
+        """查询当前学生最近一次已完成/已跳过的诊断中的知识点掌握度。
+
+        按诊断时间倒序，取最新一条 completed 或 skipped 的会话，
+        从诊断答案中汇总每个知识点的掌握度。
+        """
+        from backend.model import AsyncSessionLocal
+        from sqlalchemy import select, desc
+
+        async with AsyncSessionLocal() as session:
+            # 查询最新完成的诊断会话
+            stmt = (
+                select(DiagnosticSession)
+                .where(
+                    DiagnosticSession.user_id == user_id,
+                    DiagnosticSession.status.in_(('completed', 'skipped')),
+                )
+                .order_by(desc(DiagnosticSession.id))
+                .limit(1)
+            )
+            result = await session.execute(stmt)
+            diag = result.scalar_one_or_none()
+
+            if diag is None:
+                return []
+
+            # 查询该会话的所有题目
+            stmt = select(DiagnosticAnswer).where(
+                DiagnosticAnswer.diagnostic_id == diag.id
+            ).order_by(DiagnosticAnswer.question_id)
+            result = await session.execute(stmt)
+            answers = result.scalars().all()
+
+            # 按知识点汇总
+            masteries: dict[str, dict] = {}
+            for a in answers:
+                kp = a.knowledge_point_name or '未知知识点'
+                if kp not in masteries:
+                    masteries[kp] = {
+                        'knowledge_point_id': a.knowledge_point_id or 0,
+                        'knowledge_point_name': kp,
+                        'score': 60,
+                        'answer_count': 0,
+                        'correct_count': 0,
+                    }
+                masteries[kp]['answer_count'] += 1
+                if a.is_correct:
+                    masteries[kp]['correct_count'] += 1
+                    masteries[kp]['score'] = min(100, masteries[kp]['score'] + 3)
+                else:
+                    masteries[kp]['score'] = max(0, masteries[kp]['score'] - 3)
+
+            return [
+                {
+                    'knowledge_point_id': m['knowledge_point_id'],
+                    'knowledge_point_name': m['knowledge_point_name'],
+                    'mastery_score': m['score'],
+                    'learning_status': self._score_to_status(m['score']),
+                    'answer_count': m['answer_count'],
+                    'correct_count': m['correct_count'],
+                }
+                for m in masteries.values()
+            ]
+
+    # ------------------------------------------------------------------
     # 查询诊断状态
     # ------------------------------------------------------------------
 
