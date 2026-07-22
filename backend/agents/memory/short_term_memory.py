@@ -53,9 +53,16 @@ class ShortTermMemory:
         session_id: int,
         limit: int = 5,
     ) -> list[dict[str, Any]]:
-        """Return the latest memory items for the user session."""
+        """Return the latest memory items for the user session.
+
+        Also refreshes the 24-hour TTL on every read, so that active
+        sessions stay alive while idle sessions naturally expire.
+        """
         key = self._key(user_id, session_id)
         raw_memories = await self.redis.lrange(key, 0, limit - 1)
+        # 每次读取也刷新 24h TTL，确保活跃会话不会被误清理
+        if raw_memories:
+            await self.redis.expire(key, 86400)
         return [self._deserialize(item) for item in raw_memories]
 
     async def remove_oldest_memory(self, user_id: int, session_id: int) -> dict[str, Any] | None:

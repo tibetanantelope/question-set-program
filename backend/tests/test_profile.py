@@ -228,6 +228,60 @@ class TestSessionMemory:
         resp = await client.delete("/sessions/1/memory")
         assert resp.status_code == 401
 
+    async def test_redis_ttl_set_on_write(self):
+        """验证写入短期记忆时自动设置 24 小时 TTL。"""
+        import pytest
+        from backend.agents.memory.short_term_memory import ShortTermMemory, MemoryUnit
+        try:
+            memory = ShortTermMemory()
+            uid, sid = 99999, 99999
+            key = memory._key(uid, sid)
+            await memory.add_memory(uid, sid, MemoryUnit("hello", "world"))
+            ttl = await memory.redis.ttl(key)
+            assert ttl > 0, f"TTL 应为正数，实际: {ttl}"
+            assert ttl <= 86400, f"TTL 不应超过 86400 秒，实际: {ttl}"
+        except (RuntimeError, AttributeError, ConnectionError, OSError):
+            pytest.skip("Redis connection unavailable in test environment")
+
+    async def test_redis_ttl_refreshed_on_read(self):
+        """验证读取短期记忆时刷新 TTL。"""
+        from backend.agents.memory.short_term_memory import ShortTermMemory, MemoryUnit
+        memory = ShortTermMemory()
+        uid, sid = 99998, 99998
+        key = memory._key(uid, sid)
+        await memory.add_memory(uid, sid, MemoryUnit("test", "data"))
+        # 手动缩短 TTL 模拟即将过期
+        await memory.redis.expire(key, 60)
+        ttl_before = await memory.redis.ttl(key)
+        assert ttl_before <= 60
+        # 读取记忆应刷新 TTL
+        await memory.get_latest_memories(uid, sid)
+        ttl_after = await memory.redis.ttl(key)
+        assert ttl_after > 60, f"读取后 TTL 应被刷新，实际: {ttl_after}"
+
+    async def test_redis_key_format(self):
+        """验证 Redis 键格式符合契约: user:{uid}:session:{sid}:short_term_memory。"""
+        from backend.agents.memory.short_term_memory import ShortTermMemory
+        memory = ShortTermMemory()
+        key = memory._key(42, 7)
+        assert key == "user:42:session:7:short_term_memory"
+
+    async def test_memory_limit_10_rounds(self):
+        """验证每个会话最多保留 10 轮记忆。"""
+        from backend.agents.memory.short_term_memory import ShortTermMemory, MemoryUnit
+        memory = ShortTermMemory(max_memory_size=10)
+        uid, sid = 99997, 99997
+        key = memory._key(uid, sid)
+        try:
+            await memory.redis.delete(key)
+        except Exception:
+            pass
+        # 写入 15 条
+        for i in range(15):
+            await memory.add_memory(uid, sid, MemoryUnit(f"user{i}", f"model{i}"))
+        size = await memory.get_memory_size(uid, sid)
+        assert size == 10, f"应保留最多 10 条，实际: {size}"
+
 
 # ── Service 层测试 ────────────────────────────────────────
 
