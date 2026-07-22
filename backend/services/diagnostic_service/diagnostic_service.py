@@ -458,7 +458,12 @@ class DiagnosticService:
             result = await session.execute(stmt)
             answers = result.scalars().all()
 
-            # 按知识点汇总
+            # 按知识点汇总，使用 基础60 + 正确率×20 + 个人(±10) 公式
+            total = len(answers)
+            correct_total = sum(1 for a in answers if a.is_correct)
+            accuracy = correct_total / max(total, 1)
+            accuracy_bonus = int(20 * accuracy)
+
             masteries: dict[str, dict] = {}
             for a in answers:
                 kp = a.knowledge_point_name or '未知知识点'
@@ -466,16 +471,14 @@ class DiagnosticService:
                     masteries[kp] = {
                         'knowledge_point_id': a.knowledge_point_id or 0,
                         'knowledge_point_name': kp,
-                        'score': 60,
                         'answer_count': 0,
                         'correct_count': 0,
                     }
                 masteries[kp]['answer_count'] += 1
+                individual = 10 if a.is_correct else -10
                 if a.is_correct:
                     masteries[kp]['correct_count'] += 1
-                    masteries[kp]['score'] = min(100, masteries[kp]['score'] + 3)
-                else:
-                    masteries[kp]['score'] = max(0, masteries[kp]['score'] - 3)
+                masteries[kp]['score'] = max(0, min(100, 60 + accuracy_bonus + individual))
 
             return [
                 {
@@ -574,16 +577,27 @@ class DiagnosticService:
         stored_answers = await self.mapper.get_answers(session.id)
         stored_map = {a.question_id: a for a in stored_answers}
 
-        # 判题并累计掌握度（按《系统业务设计》评分规则）
-        # 基础分 60，诊断题均为 easy，答对 +3、答错 -3
-        masteries: dict[str, dict] = {}
+        # 判题并累计掌握度
+        # 每知识点分数 = 基础60 + 整体正确率×20 + 个人正确(+10)或错误(-10)
+        # 正确率越高整体分越高，同时区分各知识点的对错
+        # 示例: 5/5全对→90, 4/5对→86/错→66, 3/5对→82/错→62, 2/5→78/58, 1/5→74/54, 0/5→50
+        total = len(req.answers)
+        correct_count = 0
+        judge_results: list[tuple] = []
         for item in req.answers:
             stored = stored_map.get(item.question_id)
             if stored is None:
                 continue
             correct = self._judge_answer(item.answer, stored.expected_answer or None)
             await self.mapper.update_answer(stored.id, item.answer, correct)
+            judge_results.append((stored, correct))
+            if correct:
+                correct_count += 1
 
+        accuracy = correct_count / max(total, 1)
+        accuracy_bonus = int(20 * accuracy)
+        masteries: dict[str, dict] = {}
+        for stored, correct in judge_results:
             kp_name = stored.knowledge_point_name or '未知知识点'
             kp_id = stored.knowledge_point_id or 0
             if kp_name not in masteries:
@@ -592,8 +606,9 @@ class DiagnosticService:
                     'knowledge_point_name': kp_name,
                     'score': 60,
                 }
-            delta = 3 if correct else -3
-            masteries[kp_name]['score'] = max(0, min(100, masteries[kp_name]['score'] + delta))
+            individual = 10 if correct else -10
+            # 每知识点只计一次，直接用公式
+            masteries[kp_name]['score'] = max(0, min(100, 60 + accuracy_bonus + individual))
 
         # 标记诊断完成
         await self.mapper.update_session_status(session.id, 'completed')
