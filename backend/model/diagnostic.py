@@ -26,5 +26,6 @@ class DiagnosticAnswer(Base):
     knowledge_point_id = Column(Integer, default=None, comment='知识点ID')
     knowledge_point_name = Column(String(128), default=None, comment='知识点名称')
     user_answer = Column(Text, default=None, comment='学生答案')
+    expected_answer = Column(Text, default=None, comment='题库标准答案')
     is_correct = Column(Boolean, default=None, comment='判题结果')
     created_at = Column(DateTime, default=func.current_timestamp(), comment='创建时间')
