@@ -176,7 +176,11 @@ class TestDiagnosticApi:
         resp = await client.post("/profile/diagnostic/skip", headers=h)
         assert resp.status_code == 200
         assert resp.json()["data"]["status"] == "skipped"
-        assert resp.json()["data"]["masteries"] == []
+        masteries = resp.json()["data"]["masteries"]
+        assert len(masteries) > 0, "跳过诊断应返回初始化的知识点"
+        for m in masteries:
+            assert m["mastery_score"] == 60
+            assert m["learning_status"] == "consolidating"
 
         # 确认状态已更新
         status = await client.get("/profile/diagnostic/status", headers=h)

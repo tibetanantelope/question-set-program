@@ -505,8 +505,9 @@ class DiagnosticService:
         stored_answers = await self.mapper.get_answers(session.id)
         stored_map = {a.question_id: a for a in stored_answers}
 
-        # 逐一判题
-        masteries: dict = {}
+        # 判题并累计掌握度（按《系统业务设计》评分规则）
+        # 基础分 60，诊断题均为 easy，答对 +3、答错 -3
+        masteries: dict[str, dict] = {}
         for item in req.answers:
             stored = stored_map.get(item.question_id)
             if stored is None:
@@ -517,12 +518,13 @@ class DiagnosticService:
             kp_name = stored.knowledge_point_name or '未知知识点'
             kp_id = stored.knowledge_point_id or 0
             if kp_name not in masteries:
-                score = 60 + (10 if correct else -5)
                 masteries[kp_name] = {
                     'knowledge_point_id': kp_id,
                     'knowledge_point_name': kp_name,
-                    'mastery_score': max(0, min(100, score)),
+                    'score': 60,
                 }
+            delta = 3 if correct else -3
+            masteries[kp_name]['score'] = max(0, min(100, masteries[kp_name]['score'] + delta))
 
         # 标记诊断完成
         await self.mapper.update_session_status(session.id, 'completed')
@@ -532,8 +534,8 @@ class DiagnosticService:
             MasteryItem(
                 knowledge_point_id=m['knowledge_point_id'],
                 knowledge_point_name=m['knowledge_point_name'],
-                mastery_score=m['mastery_score'],
-                learning_status=self._score_to_status(m['mastery_score']),
+                mastery_score=m['score'],
+                learning_status=self._score_to_status(m['score']),
             )
             for m in masteries.values()
         ]
@@ -550,13 +552,49 @@ class DiagnosticService:
         if p.diagnostic_status == 'completed':
             raise BusinessError('DIAGNOSTIC_ALREADY_COMPLETED', '已完成首次诊断，无需跳过', 409)
 
-        session = await self.mapper.get_latest_in_progress(user_id)
-        if session:
-            await self.mapper.update_session_status(session.id, 'skipped')
+        # 关闭旧的进行中的会话
+        existing = await self.mapper.get_latest_in_progress(user_id)
+        if existing:
+            await self.mapper.update_session_status(existing.id, 'skipped')
 
+        # 生成诊断题以确定涉及的知识点，全部初始化为 60
+        questions = self._generate_questions(p.stage, p.grade, p.subject)
+        session = await self.mapper.create_session(user_id, len(questions))
+
+        # 持久化题目（跳过时答案为跳过标记）
+        answers = [
+            DiagnosticAnswer(
+                diagnostic_id=session.id,
+                question_id=q['question_id'],
+                content=q['content'],
+                question_type=q.get('question_type', 'short_answer'),
+                difficulty=q.get('difficulty', 'easy'),
+                knowledge_point_id=q.get('knowledge_point_id'),
+                knowledge_point_name=q.get('knowledge_point_name'),
+                user_answer='[跳过]',
+                is_correct=None,
+            )
+            for q in questions
+        ]
+        await self.mapper.save_answers(session.id, answers)
+        await self.mapper.update_session_status(session.id, 'skipped')
         await self.profile_mapper.update(user_id, diagnostic_status='skipped')
 
-        return DiagnosticSubmitResponse(status='skipped', masteries=[])
+        # 所有知识点初始掌握度均为 60
+        seen: set[str] = set()
+        mastery_list: list[MasteryItem] = []
+        for q in questions:
+            kp = q.get('knowledge_point_name', '')
+            if kp and kp not in seen:
+                seen.add(kp)
+                mastery_list.append(MasteryItem(
+                    knowledge_point_id=q.get('knowledge_point_id', 0),
+                    knowledge_point_name=kp,
+                    mastery_score=60,
+                    learning_status='consolidating',
+                ))
+
+        return DiagnosticSubmitResponse(status='skipped', masteries=mastery_list)
 
     # ------------------------------------------------------------------
     # 内部方法
