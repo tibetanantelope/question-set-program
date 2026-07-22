@@ -37,10 +37,15 @@ class ShortTermMemory:
         return json.loads(raw_memory)
 
     async def add_memory(self, user_id: int, session_id: int, memory: MemoryUnit):
-        """Add a memory item, keeping newest records at the head of the Redis list."""
+        """Add a memory item, keeping newest records at the head of the Redis list.
+
+        Also refreshes the 24-hour TTL on every write.
+        """
         key = self._key(user_id, session_id)
         await self.redis.lpush(key, json.dumps(dict(memory), ensure_ascii=False))
         await self.redis.ltrim(key, 0, self.max_memory_size - 1)
+        # 每次新增对话刷新 24 小时 TTL
+        await self.redis.expire(key, 86400)
 
     async def get_latest_memories(
         self,
