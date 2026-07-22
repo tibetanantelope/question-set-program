@@ -54,9 +54,21 @@ class ProfileService:
     # ------------------------------------------------------------------
 
     async def save_profile(self, user_id: int, req: UserProfileUpdateRequest) -> StudentProfileSummary:
-        """创建或更新当前用户画像，返回画像摘要。"""
+        """创建或更新当前用户画像，返回画像摘要。
+
+        当学段、年级或学科发生变化时，重置诊断状态为 required，
+        要求用户重新完成首次诊断。
+        """
         p = await self.mapper.get_by_user_id(user_id)
         update_data = req.model_dump(exclude_none=True)
+
+        # 检测学段/年级/学科是否变化，变化则重置诊断
+        _identity_fields = {'stage', 'grade', 'subject'}
+        if p is not None and any(
+            update_data.get(f) and update_data[f] != getattr(p, f, None)
+            for f in _identity_fields
+        ):
+            update_data['diagnostic_status'] = 'required'
 
         if p is None:
             p = UserProfile(user_id=user_id, **update_data)
