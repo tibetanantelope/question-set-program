@@ -451,6 +451,29 @@ class DiagnosticService:
             if diag is None:
                 return []
 
+            # 跳过的诊断：所有知识点直接返回 60
+            if diag.status == 'skipped':
+                stmt = select(DiagnosticAnswer).where(
+                    DiagnosticAnswer.diagnostic_id == diag.id
+                ).order_by(DiagnosticAnswer.question_id)
+                result = await session.execute(stmt)
+                answers = result.scalars().all()
+                seen: set[str] = set()
+                masteries = []
+                for a in answers:
+                    kp = a.knowledge_point_name or '未知知识点'
+                    if kp not in seen:
+                        seen.add(kp)
+                        masteries.append({
+                            'knowledge_point_id': a.knowledge_point_id or 0,
+                            'knowledge_point_name': kp,
+                            'mastery_score': 60,
+                            'learning_status': 'consolidating',
+                            'answer_count': 0,
+                            'correct_count': 0,
+                        })
+                return masteries
+
             # 查询该会话的所有题目
             stmt = select(DiagnosticAnswer).where(
                 DiagnosticAnswer.diagnostic_id == diag.id
