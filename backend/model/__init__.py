@@ -54,3 +54,11 @@ async def get_db() -> AsyncSessionLocal:
             yield session
         finally:
             await session.close()
+
+
+# 确保所有模型被导入，使 Base.metadata.create_all() 能创建全部表
+from backend.model.user import User  # noqa: E402, F401
+from backend.model.user_profile import UserProfile  # noqa: E402, F401
+from backend.model.diagnostic import DiagnosticSession, DiagnosticAnswer  # noqa: E402, F401
+from backend.model.learning import LearningSession, Diagnosis, Practice, Question  # noqa: E402, F401
+from backend.model.mastery import AnswerRecord, KnowledgeMastery, Mistake, ReviewPlan  # noqa: E402, F401

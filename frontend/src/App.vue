@@ -119,10 +119,30 @@
 
 <div class="profile-cards">
   <article class="panel mastery-card"><div class="donut"><span><strong>{{ masteryAvg }}</strong><small>总体掌握度</small></span></div><div><h3>{{ masteryAvg >= 80 ? '掌握良好' : masteryAvg >= 60 ? '正在巩固' : '基础有待提升' }}</h3><p>基于 {{ masteryData.length }} 个知识点的首次诊断评估。</p><div class="legend"><span><i class="red-dot"></i>基础薄弱 (0-59)</span><span><i class="amber-dot"></i>正在巩固 (60-80)</span><span><i class="green-dot"></i>掌握良好 (81-100)</span></div></div></article>
-  <article class="panel trend"><div class="panel-head"><div><h3>掌握度分布</h3><p>各学习状态的知识点数量</p></div></div><div style="display:flex;gap:16px;padding:12px 0"><div style="flex:1;text-align:center;padding:12px;background:#ffebee;border-radius:8px"><strong style="font-size:20px;color:#c62828">{{ masteryWeak }}</strong><small style="display:block;color:#666">基础薄弱</small></div><div style="flex:1;text-align:center;padding:12px;background:#fff8e1;border-radius:8px"><strong style="font-size:20px;color:#f57c00">{{ masteryConsolidating }}</strong><small style="display:block;color:#666">正在巩固</small></div><div style="flex:1;text-align:center;padding:12px;background:#e8f5e9;border-radius:8px"><strong style="font-size:20px;color:#2e7d32">{{ masteryMastered }}</strong><small style="display:block;color:#666">掌握良好</small></div></div></article>
-</div>
+  <article class="panel distro-panel"><div class="panel-head"><div><h3>掌握度分布</h3><p>各学习状态的知识点数量</p></div></div>
+            <div class="distro-bars">
+              <div class="distro-bar weak"><div class="distro-label"><strong>{{ masteryWeak }}</strong><small>基础薄弱</small></div><div class="distro-fill"><i :style="{width:(masteryTotal?masteryWeak/masteryTotal*100:0)+'%'}"></i></div></div>
+              <div class="distro-bar consolidating"><div class="distro-label"><strong>{{ masteryConsolidating }}</strong><small>正在巩固</small></div><div class="distro-fill"><i :style="{width:(masteryTotal?masteryConsolidating/masteryTotal*100:0)+'%'}"></i></div></div>
+              <div class="distro-bar mastered"><div class="distro-label"><strong>{{ masteryMastered }}</strong><small>掌握良好</small></div><div class="distro-fill"><i :style="{width:(masteryTotal?masteryMastered/masteryTotal*100:0)+'%'}"></i></div></div>
+            </div>
+          </article>
+        </div>
 
-<article class="panel knowledge-table"><div class="panel-head"><div><h3>知识点掌握情况</h3><p>基于首次诊断评估，后续练习会持续更新</p></div></div>
+        <article v-if="trendData && trendData.points.length" class="panel trend-chart" style="margin-top:17px">
+          <div class="panel-head"><div><h3>掌握度趋势</h3><p>近 7 天变化 · 当前 <b style="color:var(--blue)">{{ trendData.current_score }}%</b> · <span :style="{color:trendData.change>=0?'var(--green)':'var(--red)'}">{{ trendData.change>=0 ? '↑' : '↓' }} {{ Math.abs(trendData.change) }}%</span></p></div></div>
+          <div class="trend-chart-body">
+            <div class="trend-bars">
+              <div v-for="(p,i) in trendData.points" :key="p.date" class="trend-bar-item">
+                <div class="trend-bar" :style="{height:(p.score)+'%'}">
+                  <span class="trend-val">{{ p.score }}</span>
+                </div>
+                <small>{{ p.date.slice(5) }}</small>
+              </div>
+            </div>
+          </div>
+        </article>
+
+        <article class="panel knowledge-table"><div class="panel-head"><div><h3>知识点掌握情况</h3><p>基于首次诊断评估，后续练习会持续更新</p></div></div>
 <div class="table-row head"><span>知识点</span><span>掌握度</span><span>学习状态</span><span>答题统计</span><span></span></div>
 <div v-if="masteryData.length === 0" style="padding:40px;text-align:center;color:var(--text-secondary)">
   <p>暂无掌握度数据</p>
@@ -138,7 +158,100 @@
 </div>
 </article>
 </section>
-<section v-else-if="currentView === 'records'" class="view"><div class="summary"><div><span>本周练习</span><strong>12<small> 组</small></strong></div><div><span>完成题目</span><strong>43<small> 道</small></strong></div><div><span>平均正确率</span><strong class="up">82<small>%</small></strong></div><div><span>掌握度变化</span><strong class="up">+5<small>%</small></strong></div></div><article class="panel record-panel"><div class="panel-head"><div><h3>学习时间线</h3><p>练习、诊断和订正记录将在这里统一呈现</p></div><div class="filters"><button class="active">全部记录</button><button>专项练习</button><button>错题订正</button></div></div><div class="date-label">今天 · 7月20日</div><div v-for="record in records" :key="record.title" class="record"><time>{{ record.time }}</time><span class="record-dot"></span><div><span class="subject-icon small-icon">{{ record.icon }}</span><div><b>{{ record.title }}</b><p>{{ record.desc }}</p></div><strong :class="record.good ? 'up' : 'warn'">{{ record.result }}</strong><button>查看详情</button></div></div></article><article class="report-banner"><span>▥</span><div><small>阶段性学情报告</small><h3>生成你的本周学习报告</h3><p>总结掌握度变化、高频错因和下一阶段建议。</p></div><b>普通用户需<br>◆ 20 积分</b><button class="primary-btn" @click="placeholder('学习报告')">生成报告</button></article></section>
+
+	<section v-else-if="currentView === 'mistakes'" class="view">
+      <div class="tab-bar">
+        <button :class="{active:mistakesTab==='list'}" @click="switchMistakesTab('list')">错题列表</button>
+        <button :class="{active:mistakesTab==='review'}" @click="switchMistakesTab('review')">今日复习<i v-if="reviewData.length">{{ reviewData.length }}</i></button>
+      </div>
+
+      <div v-if="mistakesTab==='list'">
+        <div class="filter-bar">
+          <button :class="{active:mistakesFilter===''}" @click="setMistakesFilter('')" class="filter-btn">全部</button>
+          <button :class="{active:mistakesFilter==='pending'}" @click="setMistakesFilter('pending')" class="filter-btn">待订正</button>
+          <button :class="{active:mistakesFilter==='corrected'}" @click="setMistakesFilter('corrected')" class="filter-btn">已订正</button>
+          <button :class="{active:mistakesFilter==='review_due'}" @click="setMistakesFilter('review_due')" class="filter-btn">待复习</button>
+        </div>
+
+        <div v-if="mistakesLoading" class="empty-state"><p class="desc">加载中…</p></div>
+
+        <div v-else-if="mistakesData.length===0" class="empty-state">
+          <p class="icon">✎</p>
+          <p class="title">暂无错题记录</p>
+          <p class="desc">完成练习后，答错的题目会自动进入错题本</p>
+          <button class="primary-btn" @click="go('learn')">去完成练习 →</button>
+        </div>
+
+        <article v-for="m in mistakesData" :key="m.mistake_id" class="panel mistake-item" :class="{expanded:currentMistake?.mistake_id===m.mistake_id}">
+          <div class="mistake-header" @click="toggleMistake(m)">
+            <div class="mistake-info">
+              <span class="status-tag" :class="'tag-'+m.correction_status">{{ correctionStatusLabel(m.correction_status) }}</span>
+              <b>{{ m.knowledge_point_name || '综合知识点' }}</b>
+              <span class="error-tag">{{ errorTypeLabel(m.error_type) }}</span>
+            </div>
+            <div class="mistake-meta">
+              <small>{{ formatDate(m.created_at) }}</small>
+              <b class="arrow">{{ currentMistake?.mistake_id===m.mistake_id ? '▴' : '▾' }}</b>
+            </div>
+          </div>
+
+          <div v-if="currentMistake?.mistake_id===m.mistake_id" class="mistake-detail">
+            <div class="detail-row" v-if="m.question_content"><span>题目</span><b>{{ m.question_content }}</b></div>
+            <div class="detail-row"><span>你的答案</span><b class="wrong">{{ m.user_answer || '（未作答）' }}</b></div>
+            <div class="detail-row"><span>标准答案</span><b class="correct">{{ m.standard_answer || '（暂无）' }}</b></div>
+            <div class="detail-row"><span>错因</span><em>{{ errorTypeLabel(m.error_type) }}</em></div>
+            <div class="detail-row" v-if="m.next_review_at"><span>下次复习</span><b>{{ formatDate(m.next_review_at) }}</b></div>
+
+            <div v-if="m.correction_status==='pending'" class="correction-box">
+              <div v-if="correctionResult?.mistake_id===m.mistake_id" class="correction-result" :class="correctionResult.is_correct?'ok':'bad'">
+                <p><b>{{ correctionResult.is_correct ? '✓ 订正正确！' : '✕ 订正错误，请重试' }}</b></p>
+                <p v-if="correctionResult.first_success">已生成 {{ correctionResult.review_dates.length }} 次复习计划</p>
+                <p v-if="correctionResult.review_dates?.length">复习日期：{{ correctionResult.review_dates.join('、') }}</p>
+                <button class="ghost-btn" @click="correctionResult=null;correctionAnswer='';currentMistake=null;loadMistakes()">关闭</button>
+              </div>
+              <div v-else>
+                <input v-model="correctionAnswer" placeholder="在此输入你的订正答案" class="q-input" @keyup.enter="handleCorrection(m.mistake_id)">
+                <button class="primary-btn full" :disabled="correctionLoading[m.mistake_id]" @click="handleCorrection(m.mistake_id)">
+                  {{ correctionLoading[m.mistake_id] ? '提交中…' : '提交订正' }}
+                </button>
+              </div>
+            </div>
+
+            <div v-else-if="m.correction_status==='corrected'" class="correction-box corrected">
+              ✓ 已完成订正{{ m.first_correction_success ? '，首次订正积分已发放' : '' }}
+            </div>
+          </div>
+        </article>
+
+        <div v-if="mistakesTotal > 20" class="pagination">
+          <button :disabled="mistakesPage<=1" @click="changeMistakesPage(mistakesPage-1)" class="ghost-btn">上一页</button>
+          <span>{{ mistakesPage }} / {{ Math.ceil(mistakesTotal/20) }}</span>
+          <button :disabled="mistakesPage>=Math.ceil(mistakesTotal/20)" @click="changeMistakesPage(mistakesPage+1)" class="ghost-btn">下一页</button>
+        </div>
+      </div>
+
+      <div v-if="mistakesTab==='review'">
+        <div v-if="reviewLoading" class="empty-state"><p class="desc">加载中…</p></div>
+        <div v-else-if="reviewData.length===0" class="empty-state">
+          <p class="icon">✓</p>
+          <p class="title">今日无到期复习</p>
+          <p class="desc">订正错题成功后，系统会在 1 天、3 天、7 天后安排复习</p>
+        </div>
+        <article v-for="r in reviewData" :key="r.review_id" class="panel review-item">
+          <div class="review-head">
+            <span class="review-badge">到期复习</span>
+            <b>{{ r.knowledge_point_name }}</b>
+            <small>{{ r.review_date }}</small>
+          </div>
+          <div class="detail-row" v-if="r.question_content"><span>题目</span><b>{{ r.question_content }}</b></div>
+          <div class="detail-row"><span>你的答案</span><b class="wrong">{{ r.user_answer || '（未作答）' }}</b></div>
+          <div class="detail-row"><span>标准答案</span><b class="correct">{{ r.standard_answer || '（暂无）' }}</b></div>
+          <div class="detail-row"><span>错因</span><em>{{ errorTypeLabel(r.error_type) }}</em></div>
+        </article>
+      </div>
+    </section>
+
+    <section v-else-if="currentView === 'records'" class="view"><div class="summary"><div><span>本周练习</span><strong>12<small> 组</small></strong></div><div><span>完成题目</span><strong>43<small> 道</small></strong></div><div><span>平均正确率</span><strong class="up">82<small>%</small></strong></div><div><span>掌握度变化</span><strong class="up">+5<small>%</small></strong></div></div><article class="panel record-panel"><div class="panel-head"><div><h3>学习时间线</h3><p>练习、诊断和订正记录将在这里统一呈现</p></div><div class="filters"><button class="active">全部记录</button><button>专项练习</button><button>错题订正</button></div></div><div class="date-label">今天 · 7月20日</div><div v-for="record in records" :key="record.title" class="record"><time>{{ record.time }}</time><span class="record-dot"></span><div><span class="subject-icon small-icon">{{ record.icon }}</span><div><b>{{ record.title }}</b><p>{{ record.desc }}</p></div><strong :class="record.good ? 'up' : 'warn'">{{ record.result }}</strong><button>查看详情</button></div></div></article><article class="report-banner"><span>▥</span><div><small>阶段性学情报告</small><h3>生成你的本周学习报告</h3><p>总结掌握度变化、高频错因和下一阶段建议。</p></div><b>普通用户需<br>◆ 20 积分</b><button class="primary-btn" @click="placeholder('学习报告')">生成报告</button></article></section>
 
         <section v-else-if="currentView === 'points'" class="view"><div class="points-hero"><div><span>当前可用积分</span><strong>126 <small>◆</small></strong><p>坚持有效学习，让每一次进步都有回报</p></div><div class="points-stats"><span><small>本周获得</small><b>+32</b></span><span><small>累计获得</small><b>468</b></span></div><div class="coins">◆</div></div><div class="two-col"><article class="panel"><div class="panel-head"><div><h3>每日学习任务</h3><p>完成任务即可获得积分</p></div><span class="task-count">今日 2 / 3</span></div><div class="mission done"><span>✓</span><div><b>每日首次登录</b><small>每天登录即可完成</small></div><em>+2</em><button disabled>已领取</button></div><div class="mission"><span>练</span><div><b>再完成一组有效练习</b><small>今日最多奖励 3 组</small></div><em>+5</em><button @click="go('learn')">去完成</button></div><div class="mission"><span>订</span><div><b>完成一道错题订正</b><small>首次订正成功后获得</small></div><em>+3</em><button @click="go('records')">去订正</button></div></article><article class="panel streak"><div class="panel-head"><div><h3>连续学习</h3><p>已坚持学习</p></div><strong>6 天</strong></div><div class="week"><span v-for="day in ['一','二','三','四','五','六','日']" :key="day" :class="{ checked: day !== '日' }">{{ day }}<b>{{ day !== '日' ? '✓' : '7/21' }}</b></span></div><p>明天继续学习，可获得连续三天奖励 ◆10</p></article></div><article class="panel exchange"><div class="panel-head"><div><h3>积分兑换</h3><p>普通用户也能体验高级学习能力</p></div><span>余额 126</span></div><div class="exchange-grid"><div v-for="item in exchanges" :key="item.name"><span>{{ item.icon }}</span><div><h4>{{ item.name }}</h4><p>{{ item.desc }}</p></div><b>◆ {{ item.cost }}</b><button @click="placeholder(item.name)">立即兑换</button></div></div></article></section>
 
@@ -189,6 +302,7 @@ import { ElMessage } from 'element-plus'
 import { analyseStream, getToken, login, register, setToken } from './api'
 import { getMyMasteries, getMyProfile, saveMyProfile, getDiagnosticStatus, startDiagnostic, submitDiagnostic, skipDiagnostic } from './api/profile'
 import { diagnose as diagnoseApi, createPractice, submitAnswers as submitAnswersApi } from './api/learning'
+import { getMasteries, getMasteryTrend, getMistakes, submitCorrection, getTodayReviews, newRequestId } from './api/mastery'
 
 const authMode=ref('login'), authLoading=ref(false), analysisLoading=ref(false), token=ref(getToken()), currentView=ref('home'), mobileMenu=ref(false), messages=ref([])
 const authForm=reactive({username:'',password:'',confirmPassword:''})
@@ -197,12 +311,19 @@ const settings=reactive({stage:'',grade:'',subject:'',goal:'',days:5,target:3})
 const profileLoaded=ref(false), profileLoading=ref(false), realProfile=ref(null)
 const diagnostic=reactive({status:'',diagnosticId:null,questions:[],answers:[],loading:false,submitted:false})
 const masteryData=ref([]), masteryLoading=ref(false)
+// 成员三：错题、订正、复习与真实掌握度
+const mistakesData = ref([]), mistakesLoading = ref(false), mistakesTotal = ref(0), mistakesPage = ref(1), mistakesFilter = ref('')
+const reviewData = ref([]), reviewLoading = ref(false)
+const correctionLoading = ref({})
+const realMasteryData = ref([]), realMasteryLoading = ref(false), realMasteryPage = ref(1), realMasteryTotal = ref(0), realMasteryFilter = ref('')
+const trendData = ref(null), trendLoading = ref(false)
+const currentMistake = ref(null), correctionAnswer = ref(''), correctionResult = ref(null)
 // 成员二：智能诊断 → 练习生成 → 答题分析
 const learnInputType=ref('weakness')
 const learn=reactive({step:1,loading:false,diagnosis:null,practice:null,questions:[],answers:[],result:null})
 const isAuthed=computed(()=>Boolean(token.value))
-const navItems=[{key:'home',label:'学习首页',icon:'⌂',group:'学习空间'},{key:'learn',label:'智能学习',icon:'✦'},{key:'profile',label:'学习画像',icon:'◎'},{key:'records',label:'学习记录',icon:'▤',badge:'8'},{key:'points',label:'积分中心',icon:'◆',group:'成长与权益'},{key:'vip',label:'会员中心',icon:'♛'},{key:'settings',label:'基础信息设置',icon:'⚙',group:'个人设置'}]
-const metas={home:['学习首页','下午好，继续保持今天的学习节奏吧'],learn:['智能学习','描述你的问题，智学伴会为你诊断并生成针对性练习'],profile:['学习画像','了解每个知识点的掌握情况和成长趋势'],records:['学习记录','回顾每一次练习和进步'],points:['积分中心','坚持有效学习，用积分兑换更多学习能力'],vip:['会员中心','解锁更深入、更持续的个性化学习服务'],settings:['基础信息设置','完善信息，让学习内容更适合你']}
+const navItems=[{key:'home',label:'学习首页',icon:'⌂',group:'学习空间'},{key:'learn',label:'智能学习',icon:'✦'},{key:'profile',label:'学习画像',icon:'◎'},{key:'mistakes',label:'错题订正',icon:'✎',badge:reviewData.value.length||''},{key:'records',label:'学习记录',icon:'▤',badge:'8'},{key:'points',label:'积分中心',icon:'◆',group:'成长与权益'},{key:'vip',label:'会员中心',icon:'♛'},{key:'settings',label:'基础信息设置',icon:'⚙',group:'个人设置'}]
+const metas={home:['学习首页','下午好，继续保持今天的学习节奏吧'],learn:['智能学习','描述你的问题，智学伴会为你诊断并生成针对性练习'],profile:['学习画像','了解每个知识点的掌握情况和成长趋势'],records:['学习记录','回顾每一次练习和进步'],points:['积分中心','坚持有效学习，用积分兑换更多学习能力'],vip:['会员中心','解锁更深入、更持续的个性化学习服务'],mistakes:['错题订正','订正错题，完成复习计划，巩固薄弱知识点'],settings:['基础信息设置','完善信息，让学习内容更适合你']}
 const pageMeta=computed(()=>({title:metas[currentView.value][0],subtitle:metas[currentView.value][1]}))
 const quickPrompts=['移项时为什么要变号？','我总在去括号时出错','帮我复习一元一次方程']
 const knowledgeItems=[{name:'一元一次方程 · 移项',chapter:'第三章 一元一次方程',score:55,status:'基础薄弱',type:'weak',correct:5,total:12,date:'今天'},{name:'去括号法则',chapter:'第二章 整式的加减',score:63,status:'正在巩固',type:'medium',correct:8,total:13,date:'昨天'},{name:'有理数乘除法',chapter:'第一章 有理数',score:86,status:'掌握良好',type:'good',correct:18,total:21,date:'7月18日'}]
@@ -221,18 +342,19 @@ const currentGrades=computed(()=>gradeOptions[settings.stage]||[])
 const currentSubjects=computed(()=>subjectOptions[settings.stage]||[])
 function onStageChange(stage){settings.stage=stage;settings.grade='';settings.subject=''}
 
-function go(view){currentView.value=view;mobileMenu.value=false;window.scrollTo({top:0,behavior:'smooth'});if(view==='settings')loadProfile();if(view==='profile')loadMasteries()}
+function go(view){currentView.value=view;mobileMenu.value=false;window.scrollTo({top:0,behavior:'smooth'});if(view==='settings')loadProfile();if(view==='profile'){loadMasteries();loadTrend()};if(view==='mistakes'){loadMistakes();loadTodayReviews()}}
 
 async function loadProfile(){if(!token.value)return;profileLoading.value=true;try{const resp=await getMyProfile();const p=resp?.data?.profile;realProfile.value=p;if(p){settings.stage=stageMap[p.stage]||p.stage;settings.grade=p.grade||'';settings.subject=p.subject||'';settings.goal=goalMap[p.learning_goal]||p.learning_goal;settings.days=p.weekly_study_days||5;settings.target=p.daily_target_groups||3;profileLoaded.value=true;await loadDiagnosticStatus()}else{profileLoaded.value=false}}catch(e){console.error('加载画像失败',e)}finally{profileLoading.value=false}}
 
 async function loadDiagnosticStatus(){try{const resp=await getDiagnosticStatus();diagnostic.status=resp?.data?.status||'';diagnostic.diagnosticId=resp?.data?.diagnostic_id||null}catch(e){console.error('加载诊断状态失败',e)}}
 
-async function loadMasteries(){if(!token.value)return;masteryLoading.value=true;try{const resp=await getMyMasteries();masteryData.value=resp?.data||[]}catch(e){console.error('加载掌握度失败',e)}finally{masteryLoading.value=false}}
+async function loadMasteries(){if(!token.value)return;masteryLoading.value=true;try{const resp=await getMasteries({page:1,page_size:100});masteryData.value=resp?.data?.items||[]}catch(e){console.error('加载掌握度失败',e)}finally{masteryLoading.value=false}}
 
 const masteryAvg=computed(()=>{const arr=masteryData.value;if(!arr.length)return 0;const sum=arr.reduce((s,m)=>s+m.mastery_score,0);return Math.round(sum/arr.length)})
 const masteryWeak=computed(()=>masteryData.value.filter(m=>m.learning_status==='weak').length)
 const masteryConsolidating=computed(()=>masteryData.value.filter(m=>m.learning_status==='consolidating').length)
 const masteryMastered=computed(()=>masteryData.value.filter(m=>m.learning_status==='mastered').length)
+const masteryTotal=computed(()=>masteryData.value.length)
 async function submitAuth(){if(authForm.username.length<6||authForm.password.length<6){ElMessage.warning('用户名和密码都需要 6 到 20 位');return}if(authMode.value==='register'&&authForm.password!==authForm.confirmPassword){ElMessage.warning('两次输入的密码不一致');return}authLoading.value=true;try{if(authMode.value==='register'){const user=await register(authForm.username,authForm.password);if(user?.id)requestForm.userId=user.id;ElMessage.success('注册成功，请登录');authMode.value='login';authForm.password='';authForm.confirmPassword='';return}const payload=await login(authForm.username,authForm.password);token.value=payload.access_token;ElMessage.success('登录成功，欢迎回来');await loadProfile();if(!realProfile.value){ElMessage.warning('请先完善学习信息');go('settings')}}catch(error){ElMessage.error(error.message||'认证失败')}finally{authLoading.value=false}}
 function clearSession(){setToken('');token.value='';realProfile.value=null;profileLoaded.value=false;diagnostic.status='';diagnostic.questions=[];diagnostic.answers=[];diagnostic.submitted=false;currentView.value='home';ElMessage.success('已安全退出')}
 function addMessage(role,content,title=role==='assistant'?'智学伴 AI':'你'){const msg={id:`${Date.now()}-${Math.random()}`,role,title,content};messages.value.push(msg);return msg}
@@ -260,6 +382,89 @@ async function runDiagnose(){const content=requestForm.text.trim();if(!content){
 async function runGeneratePractice(difficulty){if(!learn.diagnosis){ElMessage.warning('请先完成学情诊断');return}learn.loading=true;try{const payload={diagnosis_id:learn.diagnosis.diagnosis_id,question_count:3};if(typeof difficulty==='string'&&difficulty)payload.difficulty=difficulty;const resp=await createPractice(payload);learn.practice=resp?.data||null;learn.questions=learn.practice?.questions||[];learn.answers=learn.questions.map(()=>'');learn.result=null;learn.step=3;ElMessage.success('已生成 '+learn.questions.length+' 道'+difficultyLabel(learn.practice?.difficulty)+'难度练习')}catch(e){ElMessage.error(e.message||'练习生成失败')}finally{learn.loading=false}}
 
 async function runSubmitAnswers(){if(!learn.practice)return;const answers=learn.questions.map((q,i)=>({question_id:q.question_id,answer:learn.answers[i]||''}));learn.loading=true;try{const resp=await submitAnswersApi(learn.practice.practice_id,answers);learn.result=resp?.data||null;learn.step=4;ElMessage.success('已提交，正确率 '+(learn.result?.accuracy??0)+'%')}catch(e){ElMessage.error(e.message||'提交失败')}finally{learn.loading=false}}
+
+// ── 成员三：错题、订正、复习 ─────────────────────────────
+const mistakesTab = ref('list')
+
+function correctionStatusLabel(s) { return s==='pending'?'待订正':s==='corrected'?'已订正':s==='review_due'?'待复习':s }
+function formatDate(d) { if(!d) return ''; return new Date(d).toLocaleString('zh-CN',{month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}) }
+
+async function loadMistakes() {
+  mistakesLoading.value = true
+  try {
+    const params = { page: mistakesPage.value, page_size: 20 }
+    if (mistakesFilter.value) params.status = mistakesFilter.value
+    const resp = await getMistakes(params)
+    mistakesData.value = resp?.data?.items || []
+    mistakesTotal.value = resp?.data?.total || 0
+  } catch(e) { console.error('加载错题失败', e) }
+  finally { mistakesLoading.value = false }
+}
+
+async function loadTodayReviews() {
+  reviewLoading.value = true
+  try {
+    const resp = await getTodayReviews()
+    reviewData.value = resp?.data || []
+  } catch(e) { console.error('加载复习失败', e) }
+  finally { reviewLoading.value = false }
+}
+
+function toggleMistake(m) {
+  currentMistake.value = currentMistake.value?.mistake_id === m.mistake_id ? null : m
+  if (currentMistake.value) { correctionResult.value = null; correctionAnswer.value = '' }
+}
+
+function setMistakesFilter(status) {
+  mistakesFilter.value = status
+  mistakesPage.value = 1
+  loadMistakes()
+}
+
+function changeMistakesPage(page) {
+  mistakesPage.value = page
+  loadMistakes()
+}
+
+function switchMistakesTab(tab) {
+  mistakesTab.value = tab
+  if (tab === 'list') loadMistakes()
+  else loadTodayReviews()
+}
+
+async function handleCorrection(mistakeId) {
+  if (!correctionAnswer.value.trim()) return
+  correctionLoading.value[mistakeId] = true
+  try {
+    const resp = await submitCorrection(mistakeId, correctionAnswer.value.trim())
+    correctionResult.value = resp?.data || null
+    if (correctionResult.value?.first_success) {
+      // Trigger review list refresh
+      loadTodayReviews()
+    }
+  } catch(e) { console.error('订正失败', e) }
+  finally { correctionLoading.value[mistakeId] = false }
+}
+
+// 更新 loadMasteries 使用成员三的 API
+async function loadRealMasteries() {
+  realMasteryLoading.value = true
+  try {
+    const resp = await getMasteries({ page: realMasteryPage.value, page_size: 20, status: realMasteryFilter.value || undefined })
+    realMasteryData.value = resp?.data?.items || []
+    realMasteryTotal.value = resp?.data?.total || 0
+  } catch(e) { console.error('加载掌握度失败', e) }
+  finally { realMasteryLoading.value = false }
+}
+
+async function loadTrend() {
+  trendLoading.value = true
+  try {
+    const resp = await getMasteryTrend(7)
+    trendData.value = resp?.data || null
+  } catch(e) { console.error('加载趋势失败', e) }
+  finally { trendLoading.value = false }
+}
 
 function resetLearnFlow(){learn.step=1;learn.diagnosis=null;learn.practice=null;learn.questions=[];learn.answers=[];learn.result=null;requestForm.text=''}
 async function practiceAgain(){if(!learn.diagnosis){resetLearnFlow();return}const nextDiff=learn.result?.next_difficulty;learn.result=null;learn.practice=null;learn.questions=[];learn.answers=[];learn.step=2;await runGeneratePractice(nextDiff)}
