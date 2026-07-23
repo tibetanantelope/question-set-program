@@ -66,11 +66,52 @@
         </section>
 
         <section v-else-if="currentView === 'learn'" class="view learn-view">
-          <div class="steps"><span class="active"><b>1</b>描述问题</span><i></i><span><b>2</b>学情诊断</span><i></i><span><b>3</b>针对练习</span><i></i><span><b>4</b>分析反馈</span></div>
-          <div class="learn-grid"><article class="panel ask-panel"><div class="ai-title"><span>AI</span><div><h2>今天想解决什么问题？</h2><p>输入不会的题目、学习问题或薄弱点，我会结合你的学习画像分析。</p></div></div><div class="context-chips"><span>{{ realProfile?.stage ? stageMap[realProfile.stage]||'未设置' : '未设置' }}</span><span>{{ realProfile?.grade||'未设置' }}</span><span>{{ realProfile?.subject||'未设置' }}</span><button @click="go('settings')">修改</button></div><div class="input-tabs"><button class="active">描述薄弱点</button><button>输入题目</button><button>学习问题</button></div><textarea v-model="requestForm.text" placeholder="例如：我做一元一次方程时，经常在去括号和移项处出错……"></textarea><div class="quick"><small>试试这样问：</small><button v-for="prompt in quickPrompts" :key="prompt" @click="requestForm.text = prompt">{{ prompt }}</button></div><button class="primary-btn analyse-btn" :disabled="analysisLoading" @click="send(true)">{{ analysisLoading ? '正在分析…' : '开始智能分析 ✦' }}</button></article>
+          <div class="steps"><span :class="{active:learn.step>=1}"><b>1</b>描述问题</span><i></i><span :class="{active:learn.step>=2}"><b>2</b>学情诊断</span><i></i><span :class="{active:learn.step>=3}"><b>3</b>针对练习</span><i></i><span :class="{active:learn.step>=4}"><b>4</b>分析反馈</span></div>
+          <div class="learn-grid"><article class="panel ask-panel"><div class="ai-title"><span>AI</span><div><h2>今天想解决什么问题？</h2><p>输入不会的题目、学习问题或薄弱点，我会结合你的学习画像分析。</p></div></div><div class="context-chips"><span>{{ realProfile?.stage ? stageMap[realProfile.stage]||'未设置' : '未设置' }}</span><span>{{ realProfile?.grade||'未设置' }}</span><span>{{ realProfile?.subject||'未设置' }}</span><button @click="go('settings')">修改</button></div><div class="input-tabs"><button :class="{active:learnInputType==='weakness'}" @click="learnInputType='weakness'">描述薄弱点</button><button :class="{active:learnInputType==='question'}" @click="learnInputType='question'">输入题目</button><button :class="{active:learnInputType==='learning_question'}" @click="learnInputType='learning_question'">学习问题</button></div><textarea v-model="requestForm.text" placeholder="例如：我做一元一次方程时，经常在去括号和移项处出错……"></textarea><div class="quick"><small>试试这样问：</small><button v-for="prompt in quickPrompts" :key="prompt" @click="requestForm.text = prompt">{{ prompt }}</button></div><div class="learn-actions"><button class="primary-btn analyse-btn" :disabled="learn.loading" @click="runDiagnose">{{ learn.loading && learn.step===1 ? '诊断中…' : '开始学情诊断 ✦' }}</button><button class="ghost-btn" :disabled="analysisLoading" @click="send(true)">{{ analysisLoading ? '正在分析…' : 'AI 对话分析' }}</button></div></article>
             <aside><article class="panel profile-mini"><div class="panel-head"><h3>当前学习画像</h3><button @click="go('profile')">查看详情</button></div><div class="profile-line"><span>数</span><div><strong>七年级数学</strong><small>薄弱点补习</small></div></div><div class="mini-mastery"><span>总体掌握度</span><strong>72%</strong></div><div class="knowledge-progress"><i style="width:72%"></i></div><p>近期高频错因：<b>计算错误</b></p></article><article class="panel usage"><div class="panel-head"><h3>今日使用</h3><span>普通用户</span></div><div><span>练习生成</span><strong>1 / 5</strong></div><div class="knowledge-progress"><i style="width:20%"></i></div><div><span>详细错因分析</span><strong>需 10 积分</strong></div><button class="vip-btn full" @click="go('vip')">♛ 升级 VIP 解锁更多</button></article></aside>
           </div>
           <article v-if="messages.length" class="panel result-panel"><div class="panel-head"><div><h3>智能分析结果</h3><p>来自当前后端 Agent 接口</p></div><button @click="messages = []">清空</button></div><div v-for="message in messages" :key="message.id" class="result-message" :class="message.role"><strong>{{ message.title }}</strong><pre>{{ message.content }}</pre></div></article>
+
+          <!-- 成员二：学情诊断结果 -->
+          <article v-if="learn.diagnosis" class="panel result-panel">
+            <div class="panel-head"><div><h3>学情诊断结果</h3><p>识别知识点与掌握度评估</p></div><button @click="resetLearnFlow">重新开始</button></div>
+            <div class="diagnosis-box">
+              <div class="diagnosis-line"><span>知识点</span><b>{{ learn.diagnosis.knowledge_point_name || '综合知识点' }}</b></div>
+              <div class="diagnosis-line"><span>掌握度</span><div class="knowledge-progress" style="flex:1;margin:0 12px"><i :style="{width:learn.diagnosis.mastery_score+'%'}"></i></div><b>{{ learn.diagnosis.mastery_score }}%</b></div>
+              <div class="diagnosis-line"><span>学习状态</span><em :class="learn.diagnosis.learning_status==='weak'?'weak':learn.diagnosis.learning_status==='consolidating'?'medium':'good'">{{ statusLabel(learn.diagnosis.learning_status) }}</em></div>
+              <p v-if="learn.diagnosis.weakness" class="diagnosis-note"><b>薄弱点：</b>{{ learn.diagnosis.weakness }}</p>
+              <p v-if="learn.diagnosis.practice_suggestion" class="diagnosis-note"><b>练习建议：</b>{{ learn.diagnosis.practice_suggestion }}</p>
+            </div>
+            <button v-if="!learn.practice" class="primary-btn" :disabled="learn.loading" @click="runGeneratePractice()">{{ learn.loading && learn.step===2 ? '生成中…' : '生成针对性练习 →' }}</button>
+          </article>
+
+          <!-- 成员二：练习作答 -->
+          <article v-if="learn.practice && !learn.result" class="panel result-panel">
+            <div class="panel-head"><div><h3>针对性练习</h3><p>{{ learn.practice.knowledge_point_name }} · 难度：{{ difficultyLabel(learn.practice.difficulty) }} · 共 {{ learn.questions.length }} 题</p></div></div>
+            <div v-for="(q,i) in learn.questions" :key="q.question_id" class="question-item">
+              <div class="question-head"><span class="q-index">{{ i+1 }}</span><b>{{ q.content }}</b></div>
+              <input class="q-input" v-model="learn.answers[i]" placeholder="在此输入你的答案" />
+            </div>
+            <button class="primary-btn" :disabled="learn.loading" @click="runSubmitAnswers">{{ learn.loading && learn.step===3 ? '提交中…' : '提交答案 ✦' }}</button>
+          </article>
+
+          <!-- 成员二：答题分析 -->
+          <article v-if="learn.result" class="panel result-panel">
+            <div class="panel-head"><div><h3>答题分析</h3><p>正确率 {{ learn.result.accuracy }}% · 答对 {{ learn.result.correct_count }}/{{ learn.result.question_count }}</p></div><div class="learn-actions"><button class="primary-btn" :disabled="learn.loading" @click="practiceAgain">{{ learn.loading ? '生成中…' : '再练一组 →' }}</button><button class="ghost-btn" @click="resetLearnFlow">换个问题</button></div></div>
+            <div class="difficulty-tip" :class="diffTrend(learn.result.current_difficulty,learn.result.next_difficulty)">
+              <span>本组难度：<b>{{ difficultyLabel(learn.result.current_difficulty) }}</b></span>
+              <span class="arrow">→</span>
+              <span>下一组：<b>{{ difficultyLabel(learn.result.next_difficulty) }}</b></span>
+              <em>{{ diffTrendLabel(learn.result.current_difficulty,learn.result.next_difficulty,learn.result.accuracy) }}</em>
+            </div>
+            <div v-for="(r,i) in learn.result.results" :key="r.question_id" class="result-item" :class="r.is_correct?'ok':'bad'">
+              <div class="result-head"><span>{{ r.is_correct ? '✓ 正确' : '✕ 错误' }}</span><em v-if="!r.is_correct && r.error_type">{{ errorTypeLabel(r.error_type) }}</em></div>
+              <p><b>标准答案：</b>{{ r.standard_answer }}</p>
+              <p v-if="r.analysis"><b>解析：</b>{{ r.analysis }}</p>
+              <p v-if="r.error_description" class="err-note"><b>错因：</b>{{ r.error_description }}</p>
+              <p v-if="r.next_suggestion" class="err-note"><b>建议：</b>{{ r.next_suggestion }}</p>
+            </div>
+          </article>
         </section>
 
         <section v-else-if="currentView === 'profile'" class="view">
@@ -147,6 +188,7 @@ import { computed, reactive, ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { analyseStream, getToken, login, register, setToken } from './api'
 import { getMyMasteries, getMyProfile, saveMyProfile, getDiagnosticStatus, startDiagnostic, submitDiagnostic, skipDiagnostic } from './api/profile'
+import { diagnose as diagnoseApi, createPractice, submitAnswers as submitAnswersApi } from './api/learning'
 
 const authMode=ref('login'), authLoading=ref(false), analysisLoading=ref(false), token=ref(getToken()), currentView=ref('home'), mobileMenu=ref(false), messages=ref([])
 const authForm=reactive({username:'',password:'',confirmPassword:''})
@@ -155,6 +197,9 @@ const settings=reactive({stage:'',grade:'',subject:'',goal:'',days:5,target:3})
 const profileLoaded=ref(false), profileLoading=ref(false), realProfile=ref(null)
 const diagnostic=reactive({status:'',diagnosticId:null,questions:[],answers:[],loading:false,submitted:false})
 const masteryData=ref([]), masteryLoading=ref(false)
+// 成员二：智能诊断 → 练习生成 → 答题分析
+const learnInputType=ref('weakness')
+const learn=reactive({step:1,loading:false,diagnosis:null,practice:null,questions:[],answers:[],result:null})
 const isAuthed=computed(()=>Boolean(token.value))
 const navItems=[{key:'home',label:'学习首页',icon:'⌂',group:'学习空间'},{key:'learn',label:'智能学习',icon:'✦'},{key:'profile',label:'学习画像',icon:'◎'},{key:'records',label:'学习记录',icon:'▤',badge:'8'},{key:'points',label:'积分中心',icon:'◆',group:'成长与权益'},{key:'vip',label:'会员中心',icon:'♛'},{key:'settings',label:'基础信息设置',icon:'⚙',group:'个人设置'}]
 const metas={home:['学习首页','下午好，继续保持今天的学习节奏吧'],learn:['智能学习','描述你的问题，智学伴会为你诊断并生成针对性练习'],profile:['学习画像','了解每个知识点的掌握情况和成长趋势'],records:['学习记录','回顾每一次练习和进步'],points:['积分中心','坚持有效学习，用积分兑换更多学习能力'],vip:['会员中心','解锁更深入、更持续的个性化学习服务'],settings:['基础信息设置','完善信息，让学习内容更适合你']}
@@ -200,4 +245,22 @@ async function startDiagnosticFlow(){diagnostic.loading=true;diagnostic.question
 async function submitDiagnosticFlow(){if(!diagnostic.diagnosticId)return;diagnostic.loading=true;const answers=diagnostic.questions.map((q,i)=>({question_id:q.question_id,answer:diagnostic.answers[i]||''}));try{const resp=await submitDiagnostic(diagnostic.diagnosticId,answers);diagnostic.status='completed';diagnostic.submitted=true;const masteries=resp?.data?.masteries||[];ElMessage.success('诊断完成！初始化了 '+masteries.length+'个知识点的掌握度');await loadDiagnosticStatus()}catch(e){ElMessage.error(e.message||'提交诊断失败')}finally{diagnostic.loading=false}}
 
 async function skipDiagnosticFlow(){diagnostic.loading=true;try{const resp=await skipDiagnostic();diagnostic.status='skipped';diagnostic.submitted=true;ElMessage.success('已跳过首次诊断，使用默认掌握度 60');await loadDiagnosticStatus()}catch(e){ElMessage.error(e.message||'跳过诊断失败')}finally{diagnostic.loading=false}}
+
+// ── 成员二：诊断 → 练习 → 提交 ─────────────────────────────
+const inputTypeLabel={weakness:'描述薄弱点',question:'输入题目',learning_question:'学习问题'}
+function statusLabel(s){return s==='weak'?'基础薄弱':s==='consolidating'?'正在巩固':'掌握良好'}
+function difficultyLabel(d){return d==='easy'?'简单':d==='medium'?'中等':d==='hard'?'困难':'—'}
+const _diffRank={easy:0,medium:1,hard:2}
+function diffTrend(cur,next){const c=_diffRank[cur],n=_diffRank[next];if(c==null||n==null)return'flat';return n>c?'up':n<c?'down':'flat'}
+function diffTrendLabel(cur,next,acc){const t=diffTrend(cur,next);if(t==='up')return`正确率 ${acc}% 达标，已为你升高难度`;if(t==='down')return`正确率 ${acc}% 偏低，已为你降低难度巩固`;return`正确率 ${acc}%，保持当前难度继续巩固`}
+function errorTypeLabel(t){return {knowledge:'知识点未掌握',calculation:'计算错误',reading:'审题错误',method:'方法步骤错误'}[t]||t||''}
+
+async function runDiagnose(){const content=requestForm.text.trim();if(!content){ElMessage.warning('先描述你想解决的学习问题');return}learn.loading=true;learn.result=null;learn.practice=null;learn.questions=[];learn.answers=[];try{const resp=await diagnoseApi({input_type:learnInputType.value,content,session_id:Number(requestForm.sessionId)||undefined});learn.diagnosis=resp?.data||null;learn.step=2;ElMessage.success('诊断完成，已识别知识点：'+(learn.diagnosis?.knowledge_point_name||'综合'))}catch(e){ElMessage.error(e.message||'诊断失败')}finally{learn.loading=false}}
+
+async function runGeneratePractice(difficulty){if(!learn.diagnosis){ElMessage.warning('请先完成学情诊断');return}learn.loading=true;try{const payload={diagnosis_id:learn.diagnosis.diagnosis_id,question_count:3};if(typeof difficulty==='string'&&difficulty)payload.difficulty=difficulty;const resp=await createPractice(payload);learn.practice=resp?.data||null;learn.questions=learn.practice?.questions||[];learn.answers=learn.questions.map(()=>'');learn.result=null;learn.step=3;ElMessage.success('已生成 '+learn.questions.length+' 道'+difficultyLabel(learn.practice?.difficulty)+'难度练习')}catch(e){ElMessage.error(e.message||'练习生成失败')}finally{learn.loading=false}}
+
+async function runSubmitAnswers(){if(!learn.practice)return;const answers=learn.questions.map((q,i)=>({question_id:q.question_id,answer:learn.answers[i]||''}));learn.loading=true;try{const resp=await submitAnswersApi(learn.practice.practice_id,answers);learn.result=resp?.data||null;learn.step=4;ElMessage.success('已提交，正确率 '+(learn.result?.accuracy??0)+'%')}catch(e){ElMessage.error(e.message||'提交失败')}finally{learn.loading=false}}
+
+function resetLearnFlow(){learn.step=1;learn.diagnosis=null;learn.practice=null;learn.questions=[];learn.answers=[];learn.result=null;requestForm.text=''}
+async function practiceAgain(){if(!learn.diagnosis){resetLearnFlow();return}const nextDiff=learn.result?.next_difficulty;learn.result=null;learn.practice=null;learn.questions=[];learn.answers=[];learn.step=2;await runGeneratePractice(nextDiff)}
 </script>

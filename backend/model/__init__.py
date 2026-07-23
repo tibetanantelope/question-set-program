@@ -25,12 +25,15 @@ if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("mysql+pymysql
     )
 
 # 鍒涘缓寮傛寮曟搸锛堢鐞嗚繛鎺ユ睜锛?
-engine = create_async_engine(
-    SQLALCHEMY_DATABASE_URL,
-    echo=False,  # 鎵撳嵃 SQL 璇彞锛堝紑鍙戝紑鍚紝鐢熶骇鍏抽棴锛?
-    pool_pre_ping=True,  # 鑷姩鏍￠獙杩炴帴鏈夋晥鎬?
-    pool_size=10,  # 杩炴帴姹犲ぇ灏忥紙鐢熶骇鎸夐渶璋冩暣锛?
-)
+_engine_kwargs = {"echo": False, "pool_pre_ping": True}
+if not SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
+    _engine_kwargs["pool_size"] = 10
+# aiomysql 0.3.x 与 SQLAlchemy 2.0.x 的 pool_pre_ping 存在不兼容
+# (ping() 缺少 reconnect 参数)，仅对 aiomysql 关闭预检以规避该缺陷；
+# asyncmy / 其他驱动不受影响，仍保留连接预检。
+if SQLALCHEMY_DATABASE_URL.startswith("mysql+aiomysql"):
+    _engine_kwargs["pool_pre_ping"] = False
+engine = create_async_engine(SQLALCHEMY_DATABASE_URL, **_engine_kwargs)
 
 # 寮傛浼氳瘽宸ュ巶
 AsyncSessionLocal = async_sessionmaker(

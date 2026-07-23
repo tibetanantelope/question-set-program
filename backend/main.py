@@ -7,6 +7,7 @@ from backend.api.user_api.login_api import login_router
 from backend.api.health_api import health_router
 from backend.api.profile_api import profile_router
 from backend.api.session_api import session_router
+from backend.api.learning_api import learning_router
 from backend.core.hooks import startup_event, shutdown_event
 from backend.middleware.exception import register_exception_handlers
 
@@ -37,6 +38,7 @@ app.include_router(login_router)
 app.include_router(health_router)
 app.include_router(profile_router)
 app.include_router(session_router)
+app.include_router(learning_router)
 
 if __name__ == "__main__":
     import uvicorn
