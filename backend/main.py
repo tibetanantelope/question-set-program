@@ -5,6 +5,8 @@ from backend.middleware.logging import setup_logging, LoggingMiddleware
 from backend.api.user_api.agent_api import agent_router
 from backend.api.user_api.login_api import login_router
 from backend.api.health_api import health_router
+from backend.api.records_api import records_router
+from backend.api.reports_api import reports_router
 from backend.core.hooks import startup_event, shutdown_event
 from backend.middleware.exception import register_exception_handlers
 
@@ -33,6 +35,8 @@ app.on_event("shutdown")(shutdown_event)
 app.include_router(agent_router)
 app.include_router(login_router)
 app.include_router(health_router)
+app.include_router(records_router)
+app.include_router(reports_router)
 
 if __name__ == "__main__":
     import uvicorn

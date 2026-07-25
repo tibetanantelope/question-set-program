@@ -13,5 +13,7 @@ class UserProfile(Base):
     subject = Column(String(32), nullable=False, default='数学', comment='主修学科')
     weak_points = Column(JSON, nullable=False, comment='薄弱知识点（JSON）')
     preferences = Column(JSON, nullable=False, comment='长期偏好（JSON）')
+    learning_goal = Column(String(32), default='daily', comment='学习目标: daily/weakness/exam')
+    daily_target_groups = Column(Integer, default=3, comment='每日目标练习组数')
     update_time = Column(DateTime, default=func.current_timestamp(), onupdate=func.current_timestamp(), comment='更新时间')
     create_time = Column(DateTime, default=func.current_timestamp(), comment='创建时间')

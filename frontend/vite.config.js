@@ -14,6 +14,26 @@ export default defineConfig({
       '/agent': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true
+      },
+      '/records': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      },
+      '/recommendations': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      },
+      '/plans': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      },
+      '/notifications': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      },
+      '/reports': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
       }
     }
   }
