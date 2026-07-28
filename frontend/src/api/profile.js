@@ -1,5 +1,8 @@
 import { request } from '../api.js'
 
+const newRequestId = () => globalThis.crypto?.randomUUID?.()
+  || `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
 // ---------------------------------------------------------------
 // 画像
 // ---------------------------------------------------------------
@@ -11,7 +14,12 @@ export function getMyProfile() {
 
 /** 新增或修改当前学生画像 */
 export function saveMyProfile(profile) {
-  return request('/profile/me', { method: 'PUT', auth: true, body: profile })
+  return request('/profile/me', {
+    method: 'PUT',
+    auth: true,
+    headers: { 'X-Request-ID': newRequestId() },
+    body: profile
+  })
 }
 
 // ---------------------------------------------------------------

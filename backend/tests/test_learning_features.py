@@ -109,11 +109,9 @@ async def test_get_stats_summary_returns_correct_values(monkeypatch):
     session = AsyncMock()
     session.execute = AsyncMock()
 
-    c1 = MagicMock(); c1.scalar.return_value = 10   # practice_count
-    c2 = MagicMock(); c2.scalar.return_value = 50   # question_count
-    c3 = MagicMock(); c3.scalar.return_value = 75.5 # avg_accuracy
-    c4 = MagicMock(); c4.scalar.return_value = 8    # mastery_change
-    session.execute.side_effect = [c1, c2, c3, c4]
+    aggregate = MagicMock()
+    aggregate.one.return_value = (10, 50, 75.5, 8)
+    session.execute.return_value = aggregate
 
     _patch_session(monkeypatch, "backend.services.record_service", session)
 
@@ -123,6 +121,7 @@ async def test_get_stats_summary_returns_correct_values(monkeypatch):
     assert stats["question_count"] == 50
     assert stats["avg_accuracy"] == 75.5
     assert stats["mastery_change"] == 8
+    session.execute.assert_awaited_once()
 
 
 # ============================================================
@@ -186,6 +185,7 @@ async def test_get_today_plan_creates_new_plan(monkeypatch):
     from backend.services.record_service import RecordService
 
     svc = RecordService()
+    svc._get_pending_correction_count = AsyncMock(return_value=0)
 
     session = AsyncMock()
 
@@ -198,6 +198,7 @@ async def test_get_today_plan_creates_new_plan(monkeypatch):
     profile_check.scalar_one_or_none.return_value = None
 
     session.execute = AsyncMock(side_effect=[plan_check, profile_check])
+    session.add = MagicMock()
     session.commit = AsyncMock()
     session.refresh = AsyncMock()
 
@@ -208,7 +209,8 @@ async def test_get_today_plan_creates_new_plan(monkeypatch):
     assert plan["target_groups"] == 3
     assert plan["completed_groups"] == 0
     assert plan["completed"] is False
-    assert len(plan["tasks"]) >= 1
+    assert plan["task_completed"] == 0
+    assert plan["task_total"] == 1
     session.commit.assert_awaited_once()
 
 
@@ -270,6 +272,7 @@ async def test_get_unread_count(monkeypatch):
     from backend.services.record_service import RecordService
 
     svc = RecordService()
+    svc.generate_daily_notifications = AsyncMock()
 
     session = AsyncMock()
     session.execute = AsyncMock()
@@ -281,6 +284,7 @@ async def test_get_unread_count(monkeypatch):
 
     count = await svc.get_unread_count(user_id=7)
     assert count == 5
+    svc.generate_daily_notifications.assert_awaited_once_with(7)
 
 
 @pytest.mark.asyncio
@@ -492,9 +496,11 @@ def test_get_records_endpoint_returns_success(test_app, monkeypatch):
     async def fake_get_records(*args, **kwargs):
         return ([{"record_id": 1, "record_type": "practice", "title": "测试"}], 1, 1)
     svc.get_records = fake_get_records
+    svc.list_record_subjects = AsyncMock(return_value=["数学", "英语"])
+    svc.has_unclassified_records = AsyncMock(return_value=False)
 
     test_app.dependency_overrides[get_current_user] = lambda: User(id=7, username="test", password="x")
-    monkeypatch.setattr("backend.api.records_api", "record_service", svc)
+    monkeypatch.setattr("backend.api.records_api.record_service", svc)
     test_app.include_router(records_router)
 
     with TestClient(test_app, raise_server_exceptions=False) as client:
@@ -521,7 +527,7 @@ def test_get_unread_count_endpoint(test_app, monkeypatch):
     svc.get_unread_count = AsyncMock(return_value=3)
 
     test_app.dependency_overrides[get_current_user] = lambda: User(id=7, username="test", password="x")
-    monkeypatch.setattr("backend.api.records_api", "record_service", svc)
+    monkeypatch.setattr("backend.api.records_api.record_service", svc)
     test_app.include_router(records_router)
 
     with TestClient(test_app, raise_server_exceptions=False) as client:
@@ -546,7 +552,7 @@ def test_notifications_read_all_endpoint(test_app, monkeypatch):
     svc.mark_all_notifications_read = AsyncMock(return_value=5)
 
     test_app.dependency_overrides[get_current_user] = lambda: User(id=7, username="test", password="x")
-    monkeypatch.setattr("backend.api.records_api", "record_service", svc)
+    monkeypatch.setattr("backend.api.records_api.record_service", svc)
     test_app.include_router(records_router)
 
     with TestClient(test_app, raise_server_exceptions=False) as client:
@@ -579,8 +585,8 @@ def test_reports_endpoint_generate(test_app, monkeypatch):
         return None
 
     test_app.dependency_overrides[get_current_user] = lambda: User(id=7, username="test", password="x")
-    monkeypatch.setattr("backend.api.reports_api", "report_service", svc)
-    monkeypatch.setattr("backend.api.reports_api", "_check_report_entitlement", fake_entitlement)
+    monkeypatch.setattr("backend.api.reports_api.report_service", svc)
+    monkeypatch.setattr("backend.api.reports_api._check_report_entitlement", fake_entitlement)
     test_app.include_router(reports_router)
 
     with TestClient(test_app, raise_server_exceptions=False) as client:
@@ -612,7 +618,7 @@ def test_reports_list_endpoint(test_app, monkeypatch):
     ))
 
     test_app.dependency_overrides[get_current_user] = lambda: User(id=7, username="test", password="x")
-    monkeypatch.setattr("backend.api.reports_api", "report_service", svc)
+    monkeypatch.setattr("backend.api.reports_api.report_service", svc)
     test_app.include_router(reports_router)
 
     with TestClient(test_app, raise_server_exceptions=False) as client:

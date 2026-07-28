@@ -34,12 +34,16 @@ async def get_records(
         date_from=date_from,
         date_to=date_to,
     )
+    subjects = await record_service.list_record_subjects(user.id)
+    has_unclassified = await record_service.has_unclassified_records(user.id)
     return success({
         "items": items,
         "page": page,
         "page_size": page_size,
         "total": total,
         "pages": pages,
+        "subjects": subjects,
+        "has_unclassified": has_unclassified,
     })
 
 

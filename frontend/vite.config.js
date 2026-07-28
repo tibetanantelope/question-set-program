@@ -46,6 +46,26 @@ export default defineConfig({
       '/learning': {
         target: 'http://127.0.0.1:8000',
         changeOrigin: true
+      },
+      '/mastery': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      },
+      '/knowledge-reviews': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      },
+      '/mistakes': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      },
+      '/points': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
+      },
+      '/vip': {
+        target: 'http://127.0.0.1:8000',
+        changeOrigin: true
       }
     }
   }

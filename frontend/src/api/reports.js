@@ -2,11 +2,15 @@
 
 import { request } from '../api'
 
+const newRequestId = () => globalThis.crypto?.randomUUID?.()
+  || `${Date.now()}-${Math.random().toString(16).slice(2)}`
+
 /** 生成阶段性学情报告 */
-export function generateStageReport({ date_from, date_to, payment_method }) {
+export function generateStageReport({ date_from, date_to, payment_method }, requestId) {
   return request('/reports/stage', {
     method: 'POST',
     auth: true,
+    headers: { 'X-Request-ID': requestId || newRequestId() },
     body: { date_from, date_to, payment_method },
   })
 }

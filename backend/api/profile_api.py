@@ -1,14 +1,22 @@
 """成员一：用户画像与首次诊断 API 路由 (/profile)"""
 
-from fastapi import APIRouter, Depends
+import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
+
+from fastapi import APIRouter, Depends, Header
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.api.dependencies import get_current_user
+from backend.model import get_db
 from backend.model.user import User
+from backend.schemas.point_event import PointEvent
 from backend.schemas.request.user_profile_update_request import UserProfileUpdateRequest
 from backend.schemas.request.diagnostic_request import DiagnosticSubmitRequest
 from backend.schemas.response.base_response import success
 from backend.services.profile_service.profile_service import ProfileService, get_profile_service
 from backend.services.diagnostic_service.diagnostic_service import DiagnosticService, get_diagnostic_service
+from backend.services.point_service.point_service import point_service
 
 profile_router = APIRouter(prefix='/profile', tags=['用户画像'])
 
@@ -29,10 +37,20 @@ async def get_my_profile(
 async def save_my_profile(
         req: UserProfileUpdateRequest,
         user: User = Depends(get_current_user),
+        db: AsyncSession = Depends(get_db),
         service: ProfileService = Depends(get_profile_service),
+        x_request_id: str | None = Header(default=None, alias='X-Request-ID'),
 ):
     """创建或更新当前学生的画像。"""
     summary = await service.save_profile(user.id, req)
+    await point_service.reward_profile_completed(
+        db,
+        PointEvent(
+            request_id=x_request_id or str(uuid.uuid4()),
+            user_id=user.id,
+            occurred_at=datetime.now(ZoneInfo("Asia/Shanghai")),
+        ),
+    )
     return success(summary.model_dump(), message='画像保存成功')
 
 

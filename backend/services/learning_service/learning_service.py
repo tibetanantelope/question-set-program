@@ -7,8 +7,7 @@
 - 判题与错因分类：knowledge / calculation / reading / method；
 - 写操作幂等（request_id）；生成或校验失败不创建有效练习。
 
-大模型接入尚未就绪，本实现沿用诊断 Service 的“预置题库”轻量策略，
-并保留 _raw_generate 钩子便于后续替换为真实 LLM 调用与 mock 测试。
+配置 LLM 后优先动态生成个性化题目；调用失败时自动降级到预置题库或离线题目。
 """
 
 import inspect
@@ -17,9 +16,13 @@ from datetime import datetime, timezone, timedelta
 from typing import Callable, List, Optional
 
 from backend.core.exceptions import BusinessError
+from backend.middleware.logging import get_logger
+from backend.services.learning_service.answer_judge import judge_answers_via_llm
+from backend.services.learning_service.question_generator import arithmetic_explanations_are_consistent
 from backend.dao.learning_mapper import LearningMapper
 from backend.dao.user_profile_mapper import UserProfileMapper
 from backend.model.learning import Diagnosis, Practice, Question
+from backend.dao.mastery_mapper import MasteryMapper
 from backend.schemas.request.learning_request import (
     DiagnosisRequest,
     PracticeGenerateRequest,
@@ -32,6 +35,8 @@ from backend.schemas.response.learning_response import (
     AnswerResultItem,
     AnswerSubmitResponse,
 )
+
+logger = get_logger(__name__)
 
 # 难度顺序（用于升降级）
 _DIFFICULTY_ORDER = ['easy', 'medium', 'hard']
@@ -179,7 +184,7 @@ class LearningService:
     # ==================================================================
 
     async def diagnose(self, user_id: int, req: DiagnosisRequest) -> DiagnosisResponse:
-        await self._get_and_validate_profile(user_id)
+        profile = await self._get_and_validate_profile(user_id)
 
         # 基础输入校验：非空、长度、学习相关
         content = (req.content or '').strip()
@@ -191,13 +196,57 @@ class LearningService:
             raise BusinessError('INVALID_LEARNING_CONTENT', 'input_type 非法', 422)
 
         # 识别知识点
-        kp_name = self._identify_knowledge_point(content)
+        kp_name = (req.knowledge_point_name or '').strip() or self._identify_knowledge_point(content)
+        if not kp_name:
+            from backend.services.learning_service.question_generator import (
+                identify_knowledge_point_via_llm,
+            )
+            kp_name = await identify_knowledge_point_via_llm(
+                content, profile.subject, profile.stage, profile.grade
+            )
+        if not kp_name:
+            kp_name = f'{profile.grade}{profile.subject}随机巩固'
         kp_id = self._kp_id(kp_name)
 
         # 评估掌握度与薄弱点
         mastery_score, weakness = self._assess(req.input_type, content, kp_name)
         learning_status = self._score_to_status(mastery_score)
+        mastery_evidence = 'self_report'
+        mastery_evidence_text = '此前没有该知识点的答题记录；完成首组练习后生成真实掌握度'
+        historical_mastery = None
+        try:
+            historical_mastery = await MasteryMapper(
+                self.mapper.session_factory
+            ).get_mastery_by_name(user_id, kp_name)
+        except Exception:
+            # 精简部署/测试环境可能未启用掌握度模块；无证据时必须保持“待评估”，
+            # 不能让辅助历史查询阻断诊断主流程。
+            logger.debug('mastery history unavailable during diagnosis', exc_info=True)
+        if historical_mastery is not None and historical_mastery.answer_count > 0:
+            mastery_score = historical_mastery.mastery_score
+            learning_status = historical_mastery.learning_status
+            mastery_evidence = 'historical'
+            mastery_evidence_text = (
+                f'来自该知识点历史 {historical_mastery.answer_count} 次答题记录'
+            )
         suggestion = self._practice_suggestion(learning_status, kp_name)
+        concept_explanation = None
+        if req.input_type == 'learning_question':
+            # 概念答疑必须先交付真实讲解，再由用户决定是否生成检测题。
+            # 复用知识点复习的通用内容生成与相关性校验能力，适用于所有学科。
+            from backend.services.knowledge_review_service import (
+                _card_for_mode_with_ai,
+            )
+            concept_card = await _card_for_mode_with_ai(
+                kp_name, profile.subject, 'full'
+            )
+            concept_explanation = {
+                'summary': concept_card.get('summary', ''),
+                'key_points': concept_card.get('concepts', []),
+                'core_structure': concept_card.get('formula', ''),
+                'pitfalls': concept_card.get('pitfalls', []),
+                'example': concept_card.get('example'),
+            }
 
         diagnosis = Diagnosis(
             user_id=user_id,
@@ -219,8 +268,11 @@ class LearningService:
             knowledge_point_name=kp_name,
             mastery_score=mastery_score,
             learning_status=learning_status,
+            mastery_evidence=mastery_evidence,
+            mastery_evidence_text=mastery_evidence_text,
             weakness=weakness,
             practice_suggestion=suggestion,
+            concept_explanation=concept_explanation,
         )
 
     # ==================================================================
@@ -231,7 +283,7 @@ class LearningService:
         self, user_id: int, request_id: str, req: PracticeGenerateRequest
     ) -> PracticeResponse:
         profile = await self._get_and_validate_profile(user_id)
-        subject = getattr(profile, 'subject', None)
+        subject = req.subject or getattr(profile, 'subject', None)
 
         if not request_id:
             raise BusinessError('MISSING_REQUEST_ID', '缺少 X-Request-ID 请求头', 400)
@@ -246,15 +298,19 @@ class LearningService:
             raise BusinessError('INVALID_LEARNING_CONTENT', 'question_count 只能为 3~5', 422)
 
         # 确定知识点与起始难度（user_desc 为诊断原始描述，供 LLM 出题贴合真实困惑）
-        kp_name, kp_id, difficulty, user_desc = await self._resolve_target(user_id, req)
+        kp_name, kp_id, difficulty, user_desc = await self._resolve_target(
+            user_id, req, profile
+        )
 
         # 生成 + 校验，失败自动重试一次
         raw = await self._generate_and_validate(
-            kp_name, difficulty, req.question_count, subject, user_desc
+            kp_name, difficulty, req.question_count, subject, user_desc,
+            profile.stage, profile.grade,
         )
         if raw is None:
             raw = await self._generate_and_validate(
-                kp_name, difficulty, req.question_count, subject, user_desc
+                kp_name, difficulty, req.question_count, subject, user_desc,
+                profile.stage, profile.grade,
             )
 
         if raw is None:
@@ -263,12 +319,23 @@ class LearningService:
                 'PRACTICE_GENERATION_FAILED', '练习生成或校验失败，请稍后重试', 500
             )
 
+        # AI/题库可为每道题给出更具体的知识点。随机巩固时不再把占位意图
+        # “综合知识点”写入历史，而是保留单题的真实知识点快照。
+        question_kps = [
+            (q.get('knowledge_point_name') or kp_name).strip()
+            for q in raw
+        ]
+        unique_kps = list(dict.fromkeys(question_kps))
+        practice_kp_name = unique_kps[0] if len(unique_kps) == 1 else f'{subject}多知识点练习'
+        practice_kp_id = self._kp_id(practice_kp_name)
+
         # 落库（练习组 + 题目在同一事务）
         practice = Practice(
             user_id=user_id,
             diagnosis_id=req.diagnosis_id,
-            knowledge_point_id=kp_id,
-            knowledge_point_name=kp_name,
+            knowledge_point_id=practice_kp_id,
+            knowledge_point_name=practice_kp_name,
+            subject=subject,
             difficulty=difficulty,
             status='in_progress',
             question_count=len(raw),
@@ -283,9 +350,11 @@ class LearningService:
                 content=q['content'],
                 question_type='short_answer',
                 difficulty=difficulty,
-                knowledge_point_id=kp_id,
-                knowledge_point_name=kp_name,
+                knowledge_point_id=self._kp_id(question_kps[i]),
+                knowledge_point_name=question_kps[i],
                 standard_answer=q['ans'],
+                answer_type=q.get('answer_type') or 'short_text',
+                grading_spec=q.get('grading_spec') or {},
                 analysis=q['analysis'],
             )
             for i, q in enumerate(raw)
@@ -306,6 +375,25 @@ class LearningService:
         questions = await self.mapper.get_questions(practice_id)
         return self._to_practice_response(practice, questions)
 
+    async def get_detailed_analysis(self, user_id: int, practice_id: int) -> list[dict]:
+        """读取已完成练习的详细错因；权益校验由 API 层统一完成。"""
+        practice = await self.mapper.get_practice(practice_id, user_id)
+        if practice is None:
+            raise BusinessError('PRACTICE_NOT_FOUND', '练习不存在或不属于当前用户', 404)
+        if practice.status != 'completed':
+            raise BusinessError('PRACTICE_NOT_COMPLETED', '请先提交练习答案', 409)
+        questions = await self.mapper.get_questions(practice_id)
+        return [
+            {
+                'question_id': q.id,
+                'error_type': q.error_type,
+                'error_description': q.error_description,
+                'next_suggestion': q.next_suggestion,
+            }
+            for q in questions
+            if not q.is_correct
+        ]
+
     # ==================================================================
     # 8.4 提交练习答案（判题 + 错因分类 + 难度调整 + 幂等 + 事件）
     # ==================================================================
@@ -320,13 +408,82 @@ class LearningService:
         if practice is None:
             raise BusinessError('PRACTICE_NOT_FOUND', '练习不存在或不属于当前用户', 404)
 
-        # 幂等：已提交则拒绝重复提交
+        # 幂等重试：答案已经保存时重建原响应，使 API 层能够继续补偿
+        # 掌握度、记录和积分等下游步骤。
         if practice.status == 'completed':
-            raise BusinessError('PRACTICE_ALREADY_SUBMITTED', '该练习已提交，请勿重复提交', 409)
+            if practice.answer_request_id != request_id:
+                raise BusinessError('PRACTICE_ALREADY_SUBMITTED', '该练习已使用其他请求提交', 409)
+            questions = await self.mapper.get_questions(practice_id)
+            correctness_seq = [bool(q.is_correct) for q in questions]
+            results = [
+                AnswerResultItem(
+                    question_id=q.id,
+                    is_correct=bool(q.is_correct),
+                    standard_answer=q.standard_answer,
+                    analysis=q.analysis,
+                    error_type=q.error_type,
+                    error_description=q.error_description,
+                    next_suggestion=q.next_suggestion,
+                )
+                for q in questions
+            ]
+            correct_count = sum(1 for value in correctness_seq if value)
+            return AnswerSubmitResponse(
+                practice_id=practice_id,
+                status='completed',
+                question_count=len(questions),
+                correct_count=correct_count,
+                accuracy=round(correct_count / max(len(questions), 1) * 100, 2),
+                results=results,
+                current_difficulty=practice.difficulty,
+                next_difficulty=self._adjust_difficulty(practice.difficulty, correctness_seq),
+            )
 
         questions = await self.mapper.get_questions(practice_id)
-        q_map = {q.id: q for q in questions}
         answer_map = {a.question_id: a.answer for a in req.answers}
+
+        # 明确等价答案由本地规则快速判定，其余题目一次性提交 AI 做语义判题。
+        local_results = {
+            q.id: self._judge_answer(
+                (answer_map.get(q.id) or '').strip(), q.standard_answer
+            )
+            for q in questions
+        }
+        judge_items = [
+            {
+                "question_id": q.id,
+                "question": q.content[:2000],
+                "answer_type": q.answer_type or "short_text",
+                "standard_answer": (q.standard_answer or "")[:1000],
+                "analysis": (q.analysis or "")[:1500],
+                "grading_spec": q.grading_spec or {},
+                "user_answer": (answer_map.get(q.id) or '').strip()[:4000],
+            }
+            for q in questions
+            if not local_results[q.id] and (answer_map.get(q.id) or '').strip()
+        ]
+        ai_results = {}
+        if judge_items:
+            try:
+                ai_results = await judge_answers_via_llm(judge_items)
+                uncertain_items = [
+                    item for item in judge_items
+                    if item["question_id"] not in ai_results
+                    or ai_results[item["question_id"]]["verdict"] == "uncertain"
+                    or ai_results[item["question_id"]]["confidence"] < 0.82
+                ]
+                if uncertain_items:
+                    reviewed = await judge_answers_via_llm(uncertain_items, review=True)
+                    for question_id, result in reviewed.items():
+                        first = ai_results.get(question_id)
+                        if (
+                            first
+                            and first["verdict"] == result["verdict"]
+                        ):
+                            result["confidence"] = (first["confidence"] + result["confidence"]) / 2
+                        ai_results[question_id] = result
+            except Exception:
+                logger.exception("AI answer grading failed; using deterministic fallback")
 
         results: List[AnswerResultItem] = []
         correct_count = 0
@@ -335,14 +492,24 @@ class LearningService:
 
         for q in questions:
             user_answer = (answer_map.get(q.id) or '').strip()
-            is_correct = self._judge_answer(user_answer, q.standard_answer)
+            ai_grade = ai_results.get(q.id)
+            is_correct = local_results[q.id] or bool(
+                ai_grade
+                and ai_grade["verdict"] == "correct"
+                and ai_grade["confidence"] >= 0.75
+            )
             error_type = None
             error_description = None
             next_suggestion = None
             if not is_correct:
-                error_type, error_description, next_suggestion = self._classify_error(
-                    user_answer, q.standard_answer, q.knowledge_point_name
-                )
+                if ai_grade and ai_grade["confidence"] >= 0.75:
+                    error_type = ai_grade["error_type"] or "knowledge"
+                    error_description = ai_grade["reason"] or "答案未满足评分标准"
+                    next_suggestion = ai_grade["suggestion"] or "请结合解析检查关键步骤"
+                else:
+                    error_type, error_description, next_suggestion = self._classify_error(
+                        user_answer, q.standard_answer, q.knowledge_point_name
+                    )
             else:
                 correct_count += 1
 
@@ -366,18 +533,12 @@ class LearningService:
         accuracy = round(correct_count / max(total, 1) * 100, 2)
 
         # 更新练习组为已完成、有效
-        await self.mapper.update_practice_result(practice_id, correct_count, accuracy)
+        await self.mapper.update_practice_result(
+            practice_id, correct_count, accuracy, request_id
+        )
 
         # 计算下一次建议难度（连续答对2题升，连续答错2题降）
         next_difficulty = self._adjust_difficulty(practice.difficulty, correctness_seq)
-
-        # 构造并派发业务事件（成员三/四/五消费）
-        self._emit_answer_events(practice, q_map, results, request_id, user_id)
-        self._emit_practice_completed_event(
-            practice, question_count=total, correct_count=correct_count,
-            accuracy=accuracy, request_id=request_id, user_id=user_id,
-            next_difficulty=next_difficulty,
-        )
 
         return AnswerSubmitResponse(
             practice_id=practice_id,
@@ -400,7 +561,7 @@ class LearningService:
             raise BusinessError('PROFILE_NOT_COMPLETED', '请先完善学习信息（学段、年级、学科）', 400)
         return p
 
-    async def _resolve_target(self, user_id: int, req: PracticeGenerateRequest):
+    async def _resolve_target(self, user_id: int, req: PracticeGenerateRequest, profile=None):
         """确定练习针对的知识点与起始难度。
 
         优先使用关联诊断的知识点与掌握度；否则回退到默认知识点、easy。
@@ -420,7 +581,17 @@ class LearningService:
             # 掌握度决定起始难度：weak→easy, consolidating→medium, mastered→hard
             difficulty = self._status_to_difficulty(diag.learning_status)
             # 原始描述/薄弱点：让 LLM 出题紧扣用户真实困惑（题库命中时不使用，无副作用）
-            user_desc = getattr(diag, 'content', None) or getattr(diag, 'weakness', None)
+            raw_desc = getattr(diag, 'content', None) or getattr(diag, 'weakness', None)
+            task_strategies = {
+                'weakness': '定位学生自述的薄弱环节，围绕同一错误机制设计由易到难的专项变式',
+                'question': '先识别原题考点和关键解题步骤，再设计情境或数值变化后的同类迁移题',
+                'learning_question': '围绕学生提出的概念问题设计理解检测，重点辨析定义、条件和易混点',
+            }
+            input_type = getattr(diag, 'input_type', 'weakness')
+            user_desc = (
+                f'本次任务：{task_strategies.get(input_type, task_strategies["weakness"])}；'
+                f'学生原始输入：{raw_desc or ""}'
+            )
 
         # 难度衔接（“再练一组”）：优先级 显式指定 > 最近完成练习按正确率推算 > 诊断静态难度
         if req.difficulty in _DIFFICULTY_ORDER:
@@ -438,8 +609,8 @@ class LearningService:
     # 内部方法：知识点识别与掌握度评估
     # ==================================================================
 
-    def _identify_knowledge_point(self, content: str) -> str:
-        """从输入文本识别知识点（关键词匹配，未命中给出通用知识点）。"""
+    def _identify_knowledge_point(self, content: str) -> Optional[str]:
+        """Fast-path curriculum classification; ambiguous input is left to the LLM."""
         rules = [
             ('概率论', ['概率', '古典概型', '条件概率', '期望', '随机', '抛硬币', '掷骰子', '贝叶斯']),
             ('一元一次方程', ['一元一次', '移项', '一次方程']),
@@ -449,13 +620,19 @@ class LearningService:
             ('分数运算', ['分数', '通分', '约分']),
             ('三角函数', ['sin', 'cos', 'tan', '三角函数', '正弦', '余弦']),
             ('几何证明', ['全等', '相似', '证明', '三角形', '平行']),
+            ('现在完成时', ['现在完成时', 'have done', 'has done', 'past participle']),
+            ('一般将来时', ['一般将来时', 'will do', '主将从现']),
+            ('阅读理解', ['阅读理解', '文章主旨', '段落大意']),
+            ('文言文阅读', ['文言文', '实词', '虚词', '古文']),
+            ('化学方程式', ['化学方程式', '配平', '反应方程式']),
+            ('力与运动', ['牛顿定律', '受力分析', '速度', '加速度']),
         ]
         low = content.lower()
         for kp, keywords in rules:
             for kw in keywords:
                 if kw.lower() in low:
                     return kp
-        return '综合知识点'
+        return None
 
     def _assess(self, input_type: str, content: str, kp_name: str):
         """评估掌握度并给出薄弱点描述。
@@ -499,12 +676,13 @@ class LearningService:
 
     async def _generate_and_validate(
         self, kp_name: str, difficulty: str, count: int,
-        subject: Optional[str] = None, user_desc: Optional[str] = None
+        subject: Optional[str] = None, user_desc: Optional[str] = None,
+        stage: Optional[str] = None, grade: Optional[str] = None,
     ) -> Optional[List[dict]]:
         """生成一组题目并做内容质量校验；不通过返回 None（触发重试）。"""
         try:
             raw = await self._raw_generate_questions(
-                kp_name, difficulty, count, subject, user_desc
+                kp_name, difficulty, count, subject, user_desc, stage, grade
             )
         except Exception:
             # 模型调用失败：视为一次生成失败
@@ -516,14 +694,15 @@ class LearningService:
 
     async def _raw_generate_questions(
         self, kp_name: str, difficulty: str, count: int,
-        subject: Optional[str] = None, user_desc: Optional[str] = None
+        subject: Optional[str] = None, user_desc: Optional[str] = None,
+        stage: Optional[str] = None, grade: Optional[str] = None,
     ) -> List[dict]:
         """原始题目生成。
 
         优先级：
         1. self._raw_generate 钩子（测试注入的 mock / LLM，可同步或异步）；
-        2. 预置题库（数学高频知识点，答案精确、判分可靠、零延迟）；
-        3. 大模型动态出题（题库未覆盖的知识点/科目，支持任意科目）；
+        2. 大模型动态出题（配置后优先，支持任意科目/知识点）；
+        3. 预置题库（LLM 不可用或失败时可靠降级）；
         4. 离线兜底（无 LLM 配置时，生成结构完整的算术练习并注明来源）。
         """
         if self._raw_generate is not None:
@@ -531,6 +710,26 @@ class LearningService:
             if inspect.isawaitable(res):
                 res = await res
             return res
+
+        from backend.services.learning_service.question_generator import (
+            generate_questions_via_llm,
+            llm_available,
+        )
+        if llm_available():
+            try:
+                if stage or grade:
+                    return await generate_questions_via_llm(
+                        kp_name, difficulty, count, subject, user_desc, stage, grade
+                    )
+                return await generate_questions_via_llm(
+                    kp_name, difficulty, count, subject, user_desc
+                )
+            except Exception as exc:
+                logger.warning(
+                    "LLM practice generation failed; using local fallback kp=%s: %s",
+                    kp_name,
+                    exc,
+                )
 
         # 预置题库策略：按知识点关键词匹配
         bank = self._match_bank(kp_name)
@@ -541,17 +740,9 @@ class LearningService:
                 selected = random.sample(pool, count)
                 return [dict(q) for q in selected]
 
-        # 题库未覆盖 → 交给大模型动态出题（支持任意科目/知识点）
-        from backend.services.learning_service.question_generator import (
-            generate_questions_via_llm,
-            llm_available,
-        )
-        if llm_available():
-            # LLM 调用失败会抛异常 → 由 _generate_and_validate 捕获并重试一次，
-            # 两次都失败则 PRACTICE_GENERATION_FAILED（不创建无效练习）。
-            return await generate_questions_via_llm(kp_name, difficulty, count, subject, user_desc)
-
-        # 无 LLM 配置（离线/本地开发）→ 结构完整的兜底
+        # 无可用题库 → 结构完整的离线兜底
+        if subject and subject != '数学':
+            return []
         return self._fallback_questions(difficulty, count, kp_name)
 
     def _match_bank(self, kp_name: str) -> Optional[dict]:
@@ -563,7 +754,9 @@ class LearningService:
     def _fallback_questions(self, difficulty: str, count: int, kp_name: str = '') -> List[dict]:
         import random
         # 题库暂无该知识点时的兜底：题面注明来源，避免"概率论出成方程题"的误导
-        tag = f'（{kp_name}·基础巩固）' if kp_name and kp_name != '综合知识点' else ''
+        broad_target = '随机巩固' in (kp_name or '')
+        actual_kp = '一元一次方程' if broad_target else (kp_name or '一元一次方程')
+        tag = f'（{actual_kp}·基础巩固）'
         out = []
         seen = set()
         while len(out) < count:
@@ -573,15 +766,15 @@ class LearningService:
             if difficulty == 'easy':
                 x = c
                 content = f'{tag}解方程：x + {b} = {c + b}'
-                item = {'content': content, 'ans': f'x={x}', 'analysis': f'两边同时减 {b}，得 x={x}。'}
+                item = {'content': content, 'knowledge_point_name': actual_kp, 'ans': f'x={x}', 'analysis': f'两边同时减 {b}，得 x={x}。'}
             elif difficulty == 'medium':
                 x = c
                 content = f'{tag}解方程：{a}x + {b} = {a * x + b}'
-                item = {'content': content, 'ans': f'x={x}', 'analysis': f'移项得 {a}x={a * x}，两边除以 {a} 得 x={x}。'}
+                item = {'content': content, 'knowledge_point_name': actual_kp, 'ans': f'x={x}', 'analysis': f'移项得 {a}x={a * x}，两边除以 {a} 得 x={x}。'}
             else:
                 x = c
                 content = f'{tag}解方程：{a}(x - {b}) = {a * (x - b)}'
-                item = {'content': content, 'ans': f'x={x}', 'analysis': f'去括号并移项，解得 x={x}。'}
+                item = {'content': content, 'knowledge_point_name': actual_kp, 'ans': f'x={x}', 'analysis': f'去括号并移项，解得 x={x}。'}
             if content in seen:
                 continue
             seen.add(content)
@@ -595,14 +788,31 @@ class LearningService:
         if len(raw) != count:
             return False
         seen = set()
+        forbidden_knowledge_points = {'综合知识点', '其他', '未知知识点'}
         for q in raw:
             if not isinstance(q, dict):
                 return False
             content = (q.get('content') or '').strip()
             ans = (q.get('ans') or '').strip()
             analysis = (q.get('analysis') or '').strip()
+            question_kp = (q.get('knowledge_point_name') or '').strip()
             # 题目、答案、解析均须齐全
             if not content or not ans or not analysis:
+                return False
+            # LLMs can produce fluent but arithmetically false explanations. Reject the
+            # whole batch so it is regenerated instead of persisting a bad answer key.
+            if not arithmetic_explanations_are_consistent(analysis):
+                return False
+            # 拒绝模型思维链、自我复盘和异常冗长输出，只保留面向学生的简洁解析。
+            if len(ans) > 300 or len(analysis) > 800:
+                return False
+            if any(marker in analysis for marker in (
+                '回顾要求', '重新审题', '示例答案格式', '最终依照',
+                '作为AI', '思维链', '内部推理',
+            )):
+                return False
+            # 模型显式返回占位知识点时整组作废并重试，不能再污染画像和报告。
+            if question_kp in forbidden_knowledge_points:
                 return False
             # 题目不得重复
             if content in seen:
@@ -615,12 +825,31 @@ class LearningService:
     # ==================================================================
 
     def _judge_answer(self, user_answer: str, standard_answer: Optional[str]) -> bool:
-        """判题：规范化后比较（去空格、全角转半角、小写、去 x= 前缀）。"""
+        """仅处理可确定的等价答案；复杂表达交由 AI 语义判题。"""
         if not user_answer or not user_answer.strip():
             return False
         if not standard_answer:
             return True  # 无标准答案的主观题宽松判对
-        return self._normalize(user_answer) == self._normalize(standard_answer)
+        normalized_user = self._normalize(user_answer)
+        normalized_standard = self._normalize(standard_answer)
+        if normalized_user == normalized_standard:
+            return True
+
+        # 标准答案是单一数值时，允许用户附加单位或“答案是”等自然语言。
+        # 用户答案必须也只包含一个数值，避免把复杂关系误判为数值等价。
+        numeric_pattern = r"[-+]?(?:\d+(?:\.\d+)?|\.\d+)"
+        standard_numbers = re.findall(numeric_pattern, normalized_standard)
+        user_numbers = re.findall(numeric_pattern, normalized_user)
+        standard_without_number = re.sub(numeric_pattern, "", normalized_standard)
+        if (
+            len(standard_numbers) == len(user_numbers) == 1
+            and not re.search(r"[a-z\u4e00-\u9fff]", standard_without_number)
+        ):
+            try:
+                return abs(float(standard_numbers[0]) - float(user_numbers[0])) <= 1e-9
+            except ValueError:
+                return False
+        return False
 
     @staticmethod
     def _normalize(s: str) -> str:
@@ -736,57 +965,6 @@ class LearningService:
         return {'weak': 'easy', 'consolidating': 'medium', 'mastered': 'hard'}.get(status or '', 'easy')
 
     # ==================================================================
-    # 内部方法：业务事件（对齐契约 5.4 / 5.5）
-    # ==================================================================
-
-    def _emit_answer_events(self, practice, q_map, results, request_id, user_id) -> None:
-        """为每道题构造 AnswerResultEvent 交给成员三（掌握度/错题）。
-
-        事件总线尚未接入，这里构造载荷并记录日志，保留对接口点。
-        """
-        now = datetime.now(_TZ).isoformat()
-        for r in results:
-            q = q_map.get(r.question_id)
-            event = {
-                'request_id': request_id,
-                'user_id': user_id,
-                'practice_id': practice.id,
-                'question_id': r.question_id,
-                'knowledge_point_id': q.knowledge_point_id if q else None,
-                'knowledge_point_name': q.knowledge_point_name if q else None,
-                'difficulty': q.difficulty if q else practice.difficulty,
-                'is_correct': r.is_correct,
-                'error_type': r.error_type,
-                'answered_at': now,
-            }
-            self._publish_event('ANSWER_RESULT', event)
-
-    def _emit_practice_completed_event(
-        self, practice, question_count, correct_count, accuracy,
-        request_id, user_id, next_difficulty,
-    ) -> None:
-        """整组完成后构造 PracticeCompletedEvent 交给成员四/五。"""
-        event = {
-            'request_id': request_id,
-            'user_id': user_id,
-            'practice_id': practice.id,
-            'subject': None,  # 由消费方结合画像补全
-            'knowledge_point_id': practice.knowledge_point_id,
-            'question_count': question_count,
-            'correct_count': correct_count,
-            'accuracy': accuracy,
-            'is_valid': True,
-            'next_difficulty': next_difficulty,
-            'completed_at': datetime.now(_TZ).isoformat(),
-        }
-        self._publish_event('PRACTICE_COMPLETED', event)
-
-    def _publish_event(self, topic: str, payload: dict) -> None:
-        """事件发布占位：事件总线接入后替换为真实发布。"""
-        import logging
-        logging.getLogger('learning.events').info('[%s] %s', topic, payload)
-
-    # ==================================================================
     # 内部方法：转换与工具
     # ==================================================================
 
@@ -795,6 +973,7 @@ class LearningService:
             practice_id=practice.id,
             knowledge_point_id=practice.knowledge_point_id,
             knowledge_point_name=practice.knowledge_point_name,
+            subject=practice.subject,
             difficulty=practice.difficulty,
             status=practice.status,
             questions=[

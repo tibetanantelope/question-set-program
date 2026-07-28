@@ -39,6 +39,49 @@
 .difficulty-tip.down{background:#fff4e5;color:#9a6a1e}
 .difficulty-tip.down b,.difficulty-tip.down em{color:var(--orange)}
 
+/* 结构化智能学习闭环 */
+.learning-result,.practice-panel,.feedback-panel,.entitlement-alert{margin-top:17px}
+.learning-status{padding:5px 10px;border-radius:12px;font-size:10px;font-weight:700}
+.learning-status.weak{color:var(--red);background:#fff0f1}
+.learning-status.consolidating{color:var(--orange);background:#fff4e5}
+.learning-status.mastered{color:var(--green);background:#e9f8f3}
+.diagnosis-grid{display:grid;grid-template-columns:.7fr 1.3fr 1.3fr;gap:14px;margin:18px 0}
+.diagnosis-grid>div{padding:14px;border-radius:10px;background:#f7f9fc}
+.diagnosis-grid small{display:block;color:var(--muted);font-size:9px}
+.diagnosis-grid strong{display:block;margin-top:8px;color:var(--blue);font-size:24px}
+.diagnosis-grid p{margin:7px 0 0;color:#536177;font-size:10px;line-height:1.6}
+.concept-teaching{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;margin:20px 0;padding:20px;border:1px solid #dce7fb;border-radius:14px;background:#f7faff}
+.concept-teaching section{padding:16px;border-radius:11px;background:#fff}
+.concept-teaching .concept-lead{grid-column:1/-1;border-left:4px solid var(--blue)}
+.concept-teaching small{color:var(--blue);font-weight:700}
+.concept-teaching h4{margin:0 0 10px;color:#1d3150;font-size:15px}
+.concept-teaching p,.concept-teaching li{color:#4f6078;font-size:13px;line-height:1.8}
+.concept-teaching ul,.concept-teaching ol{margin:0;padding-left:22px}
+.concept-teaching .concept-example{grid-column:1/-1;background:#f0f8f4}
+.concept-next{display:flex;align-items:center;justify-content:space-between;gap:20px;padding-top:17px;border-top:1px solid #e8edf5}
+.concept-next p{margin:0;color:#68778c;font-size:13px}
+.entitlement-alert{border-color:#f1d19b;background:#fffaf1}
+.entitlement-alert h3{margin:0;color:#9a661d}
+.entitlement-alert p{color:#7c684b;font-size:11px}
+.entitlement-alert>div,.feedback-actions{display:flex;gap:10px;margin-top:14px}
+.practice-question{padding:17px 0;border-top:1px solid var(--line)}
+.practice-question:first-of-type{margin-top:14px}
+.question-title{display:flex;align-items:flex-start;gap:10px}
+.question-title>b{display:grid;place-items:center;width:26px;height:26px;flex:none;border-radius:50%;color:#fff;background:var(--blue);font-size:10px}
+.question-title>strong{flex:1;font-size:12px;line-height:1.7}
+.question-title>span{padding:3px 8px;border-radius:9px;color:var(--blue);background:var(--soft);font-size:9px}
+.practice-question input{width:100%;margin-top:12px;padding:11px 13px;border:1px solid #dce3ed;border-radius:9px;outline:0}
+.practice-question input:focus{border-color:#81a6ee;box-shadow:0 0 0 3px #edf4ff}
+.answer-feedback{margin-top:12px;padding:15px;border-left:3px solid var(--red);border-radius:10px;background:#fff7f7}
+.answer-feedback.correct{border-left-color:var(--green);background:#f2faf7}
+.feedback-title{display:flex;align-items:center;gap:9px}
+.feedback-title>b{font-size:18px;color:var(--red)}
+.answer-feedback.correct .feedback-title>b{color:var(--green)}
+.feedback-title strong{font-size:11px}
+.answer-feedback p{margin:7px 0;color:#536177;font-size:10px;line-height:1.6}
+.answer-feedback p span{color:var(--muted)}
+@media(max-width:760px){.diagnosis-grid,.concept-teaching{grid-template-columns:1fr}.concept-teaching .concept-lead,.concept-teaching .concept-example{grid-column:auto}.concept-next,.entitlement-alert>div,.feedback-actions{flex-direction:column;align-items:stretch}}
+
 /* 成员三：错题订正与复习 */
 .tab-bar{display:flex;gap:0;margin-bottom:20px;padding:4px;border-radius:10px;background:#f0f3f8}
 .tab-bar button{flex:1;padding:10px 16px;border:0;border-radius:8px;color:#7b8799;background:transparent;font-size:13px;font-weight:600;transition:all .2s}
@@ -80,6 +123,8 @@
 .correction-result{padding:14px;border-radius:10px}
 .correction-result.ok{background:#f0f9eb;border:1px solid #b7e4c7}
 .correction-result.bad{background:#fef0f0;border:1px solid #f4c2c2}
+.detail-unlock{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:16px 0;padding:14px 16px;border:1px dashed #b8c9e8;border-radius:10px;background:#f7faff}.detail-unlock p{margin:0;color:#5e6e86;font-size:12px}
+.payment-state{display:flex;align-items:center;gap:14px;margin-bottom:18px;padding:14px 18px;border-radius:10px;background:#f4f7fb;color:#526177}.payment-state strong{white-space:nowrap}.payment-state span{flex:1;font-size:12px}.payment-state button{padding:7px 12px;border:1px solid currentColor;border-radius:7px;background:#fff;color:inherit}.payment-state.paid{background:#edf9f1;color:#287a46}.payment-state.closed,.payment-state.failed{background:#fff0f0;color:#ad4040}.payment-state.paying,.payment-state.pending{background:#fff8e8;color:#9a6a15}
 .correction-result p{margin:4px 0;font-size:13px}
 .correction-result .ghost-btn{margin-top:8px}
 
@@ -117,3 +162,101 @@
 .trend-bar{width:100%;max-width:48px;border-radius:8px 8px 0 0;background:linear-gradient(180deg,#6795f0,var(--blue));position:relative;min-height:8px;transition:height .6s ease}
 .trend-val{position:absolute;top:-20px;left:50%;transform:translateX(-50%);font-size:10px;font-weight:700;color:var(--blue);white-space:nowrap}
 .trend-bar-item small{display:block;margin-top:8px;color:var(--muted);font-size:9px;text-align:center}
+.subject-filter-bar{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:16px 0 8px;padding:10px 12px;border-radius:10px;background:#f7f9fc}
+.subject-filter-bar>span{margin-right:3px;color:#7c899b;font-size:12px}
+.subject-filter-bar button{padding:6px 14px;border:1px solid transparent;border-radius:16px;color:#657287;background:#fff;cursor:pointer;font-size:12px;line-height:1.2}
+.subject-filter-bar button:hover{color:#356fe6;border-color:#cddcf8}
+.subject-filter-bar button.active{color:#fff;background:#356fe6}
+.course-label-hint{margin:14px 0 8px;padding:10px 12px;border-radius:9px;color:#718096;background:#f7f9fc;font-size:12px}
+
+/* 深度学情报告 */
+.report-score{text-align:right}.report-score>*{display:block}.report-score small{color:var(--muted);font-size:9px}.report-score strong{margin:3px 0;font-size:30px}.report-score span{font-size:9px}.report-summary{display:flex;align-items:flex-start;gap:16px;margin-top:20px;padding:16px 18px;border:1px solid #dce8fb;border-radius:12px;background:linear-gradient(100deg,#edf5ff,#f8fbff)}.report-summary span{flex:none;padding:5px 9px;border-radius:9px;color:#fff;background:var(--blue);font-size:9px;font-weight:700}.report-summary p{margin:1px 0;color:#4d5d74;font-size:11px;line-height:1.8}.report-section-head{display:flex;align-items:flex-start;justify-content:space-between}.report-section-head h4{margin-bottom:4px}.report-section-head p{margin:0;color:var(--muted);font-size:9px}.report-trend{height:190px;display:flex;align-items:flex-end;gap:12px;margin-top:20px;padding:12px 16px;border-radius:11px;background:repeating-linear-gradient(to bottom,#f8fafd 0,#f8fafd 44px,#e9eef5 45px)}.trend-day{min-width:46px;flex:1;display:grid;grid-template-rows:1fr auto auto auto;justify-items:center;height:100%}.report-trend .trend-bar{width:26px;max-width:none;height:112px;min-height:0;display:flex;align-items:flex-end;border-radius:6px;background:#e8eef7;overflow:hidden}.report-trend .trend-bar i{display:block;width:100%;border-radius:6px 6px 0 0;background:linear-gradient(#76a2f5,var(--blue))}.trend-day strong{margin-top:5px;font-size:9px}.trend-day small{color:#69778c;font-size:8px}.trend-day em{color:#9aa4b3;font-size:8px;font-style:normal}.report-kp-table{margin-top:14px;border:1px solid var(--line);border-radius:11px;overflow:hidden}.report-kp-row{display:grid;grid-template-columns:1.6fr .55fr 1.15fr .6fr .7fr;align-items:center;gap:12px;min-height:48px;padding:10px 14px;border-top:1px solid #edf0f4;font-size:10px}.report-kp-row.head{min-height:38px;border:0;color:#8995a6;background:#f7f9fc;font-size:9px}.report-kp-row>span:nth-child(3){display:flex;align-items:center;gap:8px}.mini-progress{width:70px;height:5px;display:inline-block;border-radius:5px;background:#e8edf4;overflow:hidden}.mini-progress b{display:block;height:100%;border-radius:5px;background:var(--blue)}.report-kp-row em{justify-self:start;padding:4px 8px;border-radius:8px;font-size:8px;font-style:normal}.report-kp-row em.good{color:var(--green);background:#e9f8f3}.report-kp-row em.medium{color:var(--orange);background:#fff4e5}.report-kp-row em.weak{color:var(--red);background:#fff0f1}.report-analysis-grid{display:grid;grid-template-columns:1.2fr .8fr;gap:16px}.analysis-card{padding:18px;border:1px solid var(--line);border-radius:12px}.error-distribution{margin-top:15px}.error-distribution>div{display:grid;grid-template-columns:70px 1fr 85px;align-items:center;gap:10px;margin:12px 0;font-size:9px}.error-distribution i{height:7px;border-radius:7px;background:#edf0f4;overflow:hidden}.error-distribution i b{display:block;height:100%;border-radius:7px;background:linear-gradient(90deg,#f39a72,var(--red))}.error-distribution strong{text-align:right}.comparison-list{margin-top:10px}.comparison-list>div{display:flex;align-items:center;justify-content:space-between;padding:11px 0;border-bottom:1px solid #edf0f4;font-size:10px}.report-empty{padding:20px 0;color:var(--muted);font-size:10px;text-align:center}.action-plan{padding:20px;border-radius:13px;background:#f7f9fd}.action-item{display:grid;grid-template-columns:30px 1fr;gap:13px;margin-top:14px;padding:14px;border:1px solid #e3e9f2;border-radius:10px;background:#fff}.action-item>span{width:27px;height:27px;display:grid;place-items:center;border-radius:8px;color:#fff;background:var(--blue);font-size:11px;font-weight:700}.action-item strong{font-size:11px}.action-item p{margin:5px 0;color:#68768a;font-size:9px}.action-item small{color:var(--blue);font-size:9px;line-height:1.6}
+@media(max-width:900px){.report-analysis-grid{grid-template-columns:1fr}.report-kp-row{grid-template-columns:1.4fr .6fr 1fr}.report-kp-row>*:nth-child(4),.report-kp-row>*:nth-child(5){display:none}.report-trend{overflow-x:auto}.trend-day{min-width:52px}}
+.report-scope-tabs{display:flex;gap:7px;margin:20px 0 4px;padding:6px;border-radius:11px;background:#f2f5f9;overflow-x:auto}.report-scope-tabs button{flex:none;padding:9px 16px;border:0;border-radius:8px;color:#657287;background:transparent;font-size:10px;font-weight:600}.report-scope-tabs button.active{color:#fff;background:var(--blue);box-shadow:0 5px 12px rgba(53,111,230,.18)}.sample-warning{margin-top:12px;padding:10px 13px;border:1px solid #f2d7a5;border-radius:9px;color:#94651f;background:#fff8e9;font-size:9px}.report-no-data{padding:70px 20px;text-align:center}.report-no-data>span{display:grid;place-items:center;width:55px;height:55px;margin:auto;border-radius:16px;color:#8ba5d7;background:#edf4ff;font-size:24px}.report-no-data h3{margin:16px 0 7px;font-size:15px}.report-no-data p{margin:0;color:var(--muted);font-size:10px}
+.knowledge-table .table-row{grid-template-columns:1.7fr 1.2fr .9fr .7fr .8fr 1.15fr}.kp-review-link{padding:0;border:0;color:inherit;background:transparent;font-weight:700;text-align:left}.kp-review-link:hover{color:var(--blue)}.kp-review-link small{margin-left:5px;color:var(--blue);font-size:8px;font-weight:500}
+
+/* 全局阅读性优化：旧版大量使用 8–10px 字号，在高分辨率屏幕上过小。 */
+body{font-size:14px;line-height:1.55}
+button,input,textarea,select,label{font-size:13px}
+small{font-size:12px}
+.topbar h1{font-size:21px}.topbar p{font-size:13px}
+.side-brand small,.side-user small{font-size:12px}
+.nav-group{font-size:11px}.sidebar nav button{font-size:13px}
+.goal-card>div:first-child,.goal-card small{font-size:12px}
+.eyebrow{font-size:13px}.hero h2{font-size:30px}.hero p{font-size:14px}
+.stats small{font-size:12px}.stats p,.stats em{font-size:11px}
+.panel-head h3{font-size:17px}.panel-head p,.panel-head button{font-size:12px}
+.priority,.task-count,.recommend-card small{font-size:11px}
+.recommend-card h3{font-size:15px}.recommend-card p{font-size:12px;line-height:1.65}
+.knowledge-row strong{font-size:13px}.knowledge-row small,.knowledge-row button{font-size:11px}
+.task strong{font-size:12px}.task small,.task>span{font-size:11px}
+.steps span{font-size:12px}
+.ai-title h2{font-size:21px}.ai-title p{font-size:13px}
+.context-chips span,.context-chips button,.input-tabs button{font-size:12px}
+.ask-panel textarea{font-size:14px}.quick small,.quick button{font-size:11px}
+.profile-line strong{font-size:13px}.profile-line small{font-size:11px}
+.mini-mastery,.usage>div,.profile-mini>p{font-size:12px}
+.usage .panel-head>span{font-size:11px}
+.result-message strong,.result-message pre{font-size:12px}
+.profile-banner p{font-size:12px}.profile-banner div div>span{font-size:11px}
+.donut small,.legend span{font-size:11px}.mastery-card p{font-size:12px}
+.filters button{font-size:11px}
+.table-row{font-size:12px}.table-row>button{font-size:12px}
+.summary span,.summary small{font-size:11px}
+.date-label{font-size:12px}.record time{font-size:11px}.record b{font-size:12px}
+.record p,.record>div>strong,.record button{font-size:11px}
+.report-banner p,.report-banner small,.report-banner>b{font-size:11px}
+.mission,.exchange-grid,.streak{font-size:12px}
+.report-scope-tabs button{font-size:12px}.sample-warning{font-size:11px}
+.report-no-data p,.report-empty{font-size:12px}
+.report-kp-row,.error-distribution>div,.comparison-list>div{font-size:12px}
+.report-kp-row em{font-size:11px}
+.action-item strong{font-size:13px}.action-item p,.action-item small{font-size:12px}
+.kp-review-link small{font-size:11px}
+.subject-tabs span,.subject-tabs button{font-size:12px!important}
+.review-hero span,.review-score em{font-size:12px!important}
+.review-hero p{font-size:13px!important}
+.mode-tabs small,.insight p,.advanced-focus p{font-size:12px!important}
+.block-title>span,.block-title p{font-size:12px!important}
+.concept-summary,.review-block ul,.pitfalls>div{font-size:13px!important}
+.formula small{font-size:11px!important}.quiz-item h4{font-size:13px!important}
+.quiz-item button,.quiz-item p,.quiz-result span{font-size:12px!important}
+.mistake-count span,.mistake-link p,.mini-mistake{font-size:12px!important}
+
+/* 积分中心与会员中心：提高信息字号，保持原有布局和层级。 */
+.points-hero span{font-size:14px}
+.points-hero strong{font-size:44px}
+.points-hero strong small{font-size:24px}
+.points-hero p{font-size:14px}
+.points-stats b{font-size:17px}
+.points-hero~.two-col .panel-head h3,.exchange .panel-head h3{font-size:18px}
+.points-hero~.two-col .panel-head p,.exchange .panel-head p{font-size:13px}
+.mission>span{font-size:13px}
+.mission b{font-size:14px}
+.mission small{font-size:12px}
+.mission em{font-size:14px}
+.mission button{font-size:12px}
+.streak>p{font-size:12px;line-height:1.7}
+.exchange .panel-head>span{font-size:13px}
+.exchange-grid h4{font-size:14px}
+.exchange-grid p{font-size:12px;line-height:1.6}
+.exchange-grid b{font-size:13px}
+.exchange-grid button{font-size:12px}
+.vip-hero>div:first-child>span{font-size:13px}
+.vip-hero h2{font-size:32px}
+.vip-hero p{font-size:15px;line-height:1.7}
+.vip-hero>div:first-child>div{font-size:13px}
+.vip-card small{font-size:12px}
+.vip-card strong{font-size:39px}
+.vip-card span{font-size:12px}
+.vip-hero~.compare .panel-head h3{font-size:18px}
+.vip-hero~.compare .panel-head p{font-size:13px}
+.compare-row{font-size:13px}
+.plan-card .recommend-label{font-size:11px}
+.plan-card h3{font-size:20px}
+.plan-card p{font-size:13px}
+.plan-card>strong{font-size:14px}
+.plan-card>strong b{font-size:31px}
+.plan-card ul{font-size:13px;line-height:1.6}
+.plan-card .gold-btn{font-size:14px}
+.plan-card>small{font-size:11px}

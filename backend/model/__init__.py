@@ -25,9 +25,19 @@ if SQLALCHEMY_DATABASE_URL and SQLALCHEMY_DATABASE_URL.startswith("mysql+pymysql
     )
 
 # 创建异步引擎（管理连接池）
-_engine_kwargs = {"echo": False, "pool_pre_ping": True}
+_pool_pre_ping = os.getenv("DB_POOL_PRE_PING", "true").strip().lower() in {
+    "1", "true", "yes", "on",
+}
+_engine_kwargs = {"echo": False, "pool_pre_ping": _pool_pre_ping}
 if not SQLALCHEMY_DATABASE_URL.startswith("sqlite"):
-    _engine_kwargs["pool_size"] = 10
+    _engine_kwargs.update(
+        pool_size=int(os.getenv("DB_POOL_SIZE", "5")),
+        max_overflow=int(os.getenv("DB_MAX_OVERFLOW", "5")),
+        pool_recycle=int(os.getenv("DB_POOL_RECYCLE_SECONDS", "900")),
+        connect_args={
+            "connect_timeout": int(os.getenv("DB_CONNECT_TIMEOUT_SECONDS", "5")),
+        },
+    )
 # aiomysql 0.3.x 与 SQLAlchemy 2.0.x 的 pool_pre_ping 存在不兼容
 # (ping() 缺少 reconnect 参数)，仅对 aiomysql 关闭预检以规避该缺陷；
 # asyncmy / 其他驱动不受影响，仍保留连接预检。
@@ -62,7 +72,9 @@ from backend.model.user import User  # noqa: E402, F401
 from backend.model.user_profile import UserProfile  # noqa: E402, F401
 from backend.model.diagnostic import DiagnosticSession, DiagnosticAnswer  # noqa: E402, F401
 from backend.model.learning import LearningSession, Diagnosis, Practice, Question  # noqa: E402, F401
-from backend.model.mastery import AnswerRecord, KnowledgeMastery, Mistake, ReviewPlan  # noqa: E402, F401
+from backend.model.mastery import (  # noqa: E402, F401
+    AnswerRecord, KnowledgeMastery, Mistake, ReviewPlan, KnowledgeReviewRecord,
+)
 from backend.model.learning_models import (  # noqa: E402, F401
     LearningRecord, DailyPlan, Notification, LearningReport,
 )
@@ -71,3 +83,8 @@ from backend.model.cross_module_models import (  # noqa: E402, F401
     Mistake as CrossMistake,
     ReviewPlan as CrossReviewPlan,
 )
+from backend.model.point_account import PointAccount  # noqa: E402, F401
+from backend.model.point_transaction import PointTransaction  # noqa: E402, F401
+from backend.model.usage_record import UsageRecord  # noqa: E402, F401
+from backend.model.vip_info import VipInfo  # noqa: E402, F401
+from backend.model.payment_order import PaymentOrder  # noqa: E402, F401

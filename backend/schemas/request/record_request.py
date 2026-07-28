@@ -3,7 +3,7 @@
 from datetime import date, datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class RecordQueryRequest(BaseModel):
@@ -21,6 +21,19 @@ class GenerateReportRequest(BaseModel):
     date_from: str = Field(..., description='YYYY-MM-DD')
     date_to: str = Field(..., description='YYYY-MM-DD')
     payment_method: str = Field(..., description='points 或 vip')
+
+    @model_validator(mode='after')
+    def validate_date_range(self):
+        try:
+            started = date.fromisoformat(self.date_from)
+            ended = date.fromisoformat(self.date_to)
+        except ValueError as exc:
+            raise ValueError('日期必须为 YYYY-MM-DD 格式') from exc
+        if started > ended:
+            raise ValueError('开始日期不能晚于结束日期')
+        if (ended - started).days > 365:
+            raise ValueError('报告统计区间不能超过365天')
+        return self
 
 
 class PracticeCompletedEvent(BaseModel):
@@ -45,5 +58,6 @@ class CorrectionCompletedEvent(BaseModel):
     mistake_id: int
     knowledge_point_id: Optional[int] = None
     knowledge_point_name: Optional[str] = None
+    subject: Optional[str] = None
     first_success: bool = False
     completed_at: Optional[datetime] = None

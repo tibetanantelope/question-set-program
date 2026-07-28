@@ -20,6 +20,11 @@ class MasterySummary(BaseModel):
     answer_count: int = Field(description='累计答题次数')
     correct_count: int = Field(description='累计答对次数')
     last_studied_at: Optional[str] = Field(None, description='最近一次学习时间（ISO 8601）')
+    subject: Optional[str] = Field(None, description='最近学习时的学科或课程快照')
+    evaluation_confidence: str = Field(
+        'low', description='评估可信度: low/medium/high'
+    )
+    evidence_text: str = Field('', description='掌握度计算所依据的答题证据')
 
 
 # ==================== 9.1 知识点掌握查询 ====================
@@ -31,6 +36,8 @@ class MasteryListResponse(BaseModel):
     page_size: int = Field(20)
     total: int = Field(0)
     pages: int = Field(0)
+    subjects: List[str] = Field(default_factory=list, description='历史掌握度涉及的学科或课程')
+    has_unclassified: bool = Field(False, description='是否存在无法识别学科的历史数据')
 
 
 # ==================== 9.2 掌握度趋势 ====================
@@ -59,8 +66,12 @@ class MistakeItem(BaseModel):
     standard_answer: Optional[str] = Field(None, description='标准答案')
     knowledge_point_id: Optional[int] = Field(None, description='知识点ID')
     knowledge_point_name: Optional[str] = Field(None, description='知识点名称')
+    subject: Optional[str] = Field(None, description='答题时的学科快照')
     error_type: Optional[str] = Field(None, description='knowledge/calculation/reading/method')
     correction_status: str = Field(description='pending/corrected/review_due')
+    review_completed: bool = Field(
+        False, description='是否已在本错题产生后完成对应知识点复习'
+    )
     next_review_at: Optional[str] = Field(None, description='下一次复习到期时间（ISO 8601）')
     created_at: Optional[str] = Field(None, description='错题生成时间（ISO 8601）')
 
@@ -72,6 +83,8 @@ class MistakeListResponse(BaseModel):
     page_size: int = Field(20)
     total: int = Field(0)
     pages: int = Field(0)
+    subjects: List[str] = Field(default_factory=list, description='该用户错题涉及的学科')
+    has_unclassified: bool = Field(False, description='是否存在缺少学科快照的历史错题')
 
 
 # ==================== 9.4 错题订正 ====================
@@ -83,6 +96,11 @@ class CorrectionResponse(BaseModel):
     correction_status: str = Field(description='corrected')
     first_success: bool = Field(description='是否为首次订正成功')
     review_dates: List[str] = Field(default_factory=list, description='后续复习日期列表 YYYY-MM-DD')
+    subject: Optional[str] = None
+    knowledge_point_id: Optional[int] = None
+    knowledge_point_name: Optional[str] = None
+    grading_method: Optional[str] = Field(None, description='exact/ai/fallback')
+    grading_reason: Optional[str] = Field(None, description='判题依据')
 
 
 # ==================== 9.5 今日复习 ====================
@@ -93,12 +111,38 @@ class ReviewItem(BaseModel):
     mistake_id: int = Field(description='关联错题ID')
     knowledge_point_id: Optional[int] = Field(None, description='知识点ID')
     knowledge_point_name: Optional[str] = Field(None, description='知识点名称')
+    subject: Optional[str] = Field(None, description='学科快照')
     question_content: Optional[str] = Field(None, description='题目内容（冗余）')
     standard_answer: Optional[str] = Field(None, description='标准答案')
     user_answer: Optional[str] = Field(None, description='原始错误答案')
     error_type: Optional[str] = Field(None, description='错因类型')
     review_date: str = Field(description='复习日期 YYYY-MM-DD')
     status: str = Field(description='pending/completed')
+
+
+class ReviewRevealResponse(BaseModel):
+    """"不会"后返回答案、解析和剩余复习安排。"""
+    review_id: int
+    mistake_id: int
+    standard_answer: Optional[str] = None
+    analysis: Optional[str] = None
+    mastery_change: int = -2
+    mastery_after: Optional[int] = None
+    current_round: int
+    total_rounds: int = 3
+    next_review_date: Optional[str] = None
+
+
+class MistakeAnalysisResponse(BaseModel):
+    """错题解析响应"""
+    mistake_id: int
+    standard_answer: Optional[str] = None
+    simple_analysis: Optional[str] = None
+    detailed_analysis: Optional[str] = None
+    error_type: Optional[str] = None
+    error_description: Optional[str] = None
+    knowledge_point_name: Optional[str] = None
+    payment_method: Optional[str] = None
 
 
 # ==================== Service 内部事件（第 5.4 / 5.6 节） ====================
@@ -111,9 +155,13 @@ class AnswerResultEvent(BaseModel):
     question_id: int = Field(description='题目ID')
     knowledge_point_id: Optional[int] = Field(None, description='知识点ID')
     knowledge_point_name: Optional[str] = Field(None, description='知识点名称')
+    subject: Optional[str] = Field(None, description='答题时的学科快照')
     difficulty: str = Field('easy', description='easy/medium/hard')
     is_correct: bool = Field(description='是否正确')
     error_type: Optional[str] = Field(None, description='knowledge/calculation/reading/method')
+    question_content: Optional[str] = Field(None, description='题干快照')
+    user_answer: Optional[str] = Field(None, description='学生答案快照')
+    standard_answer: Optional[str] = Field(None, description='标准答案快照')
     answered_at: str = Field(description='答题时间（ISO 8601）')
 
 

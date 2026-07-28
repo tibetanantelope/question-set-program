@@ -63,4 +63,13 @@ export function submitAnswers(practiceId, answers, requestId) {
   })
 }
 
+export function unlockDetailedAnalysis(practiceId, paymentMethod, requestId) {
+  return request(`/learning/practices/${practiceId}/detailed-analysis`, {
+    method: 'POST',
+    auth: true,
+    headers: { 'X-Request-ID': requestId || newRequestId() },
+    body: { payment_method: paymentMethod }
+  })
+}
+
 export { newRequestId }

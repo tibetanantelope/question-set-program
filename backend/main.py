@@ -1,3 +1,6 @@
+from contextlib import asynccontextmanager
+import os
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -11,15 +14,28 @@ from backend.api.profile_api import profile_router
 from backend.api.session_api import session_router
 from backend.api.learning_api import learning_router
 from backend.api.mastery_api import mastery_router
+from backend.api.points_api.points_api import points_router
+from backend.api.vip_api.vip_api import vip_router
 from backend.core.hooks import startup_event, shutdown_event
 from backend.middleware.exception import register_exception_handlers
 
 setup_logging()
 
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    await startup_event()
+    try:
+        yield
+    finally:
+        await shutdown_event()
+
+
 app = FastAPI(
-    debug=True,
+    debug=os.getenv("APP_DEBUG", "false").strip().lower() in {"1", "true", "yes", "on"},
     title="学生学情分析系统",
-    openapi_url="/api"
+    openapi_url="/api",
+    lifespan=lifespan,
 )
 
 app.add_middleware(LoggingMiddleware)
@@ -32,10 +48,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# 注册钩子函数
-app.on_event("startup")(startup_event)
-app.on_event("shutdown")(shutdown_event)
-
 app.include_router(agent_router)
 app.include_router(login_router)
 app.include_router(health_router)
@@ -45,6 +57,8 @@ app.include_router(profile_router)
 app.include_router(session_router)
 app.include_router(learning_router)
 app.include_router(mastery_router)
+app.include_router(points_router)
+app.include_router(vip_router)
 
 if __name__ == "__main__":
     import uvicorn

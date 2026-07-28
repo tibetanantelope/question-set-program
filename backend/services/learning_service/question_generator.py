@@ -7,12 +7,84 @@
   单元测试无需网络（解析逻辑为纯函数，可独立测试）。
 """
 
+import ast
 import json
+import math
 import os
 import random
 import re
 import uuid
 from typing import List, Optional
+
+import httpx
+
+_ARITHMETIC_CHARS = re.compile(
+    r"(?<![A-Za-z0-9_.])[-+]?\d[\d\s+\-−×xX*÷/().=]*\d(?![A-Za-z0-9_.])"
+)
+
+
+def _safe_numeric_eval(expression: str) -> Optional[float]:
+    """Evaluate a numeric arithmetic expression without executing arbitrary code."""
+    normalized = (
+        expression.replace("−", "-")
+        .replace("×", "*")
+        .replace("÷", "/")
+        .replace("（", "(")
+        .replace("）", ")")
+        .replace(" ", "")
+    )
+    # The letter x is accepted as a multiplication sign only between numbers/brackets.
+    normalized = re.sub(r"(?<=[\d)])\s*[xX]\s*(?=[\d(])", "*", normalized)
+    if not normalized or not re.fullmatch(r"[\d.+\-*/()]+", normalized):
+        return None
+    try:
+        node = ast.parse(normalized, mode="eval")
+    except (SyntaxError, ValueError):
+        return None
+
+    allowed_binary = (ast.Add, ast.Sub, ast.Mult, ast.Div)
+    allowed_unary = (ast.UAdd, ast.USub)
+
+    def evaluate(current):
+        if isinstance(current, ast.Expression):
+            return evaluate(current.body)
+        if isinstance(current, ast.Constant) and isinstance(current.value, (int, float)):
+            return float(current.value)
+        if isinstance(current, ast.UnaryOp) and isinstance(current.op, allowed_unary):
+            value = evaluate(current.operand)
+            return value if isinstance(current.op, ast.UAdd) else -value
+        if isinstance(current, ast.BinOp) and isinstance(current.op, allowed_binary):
+            left, right = evaluate(current.left), evaluate(current.right)
+            if isinstance(current.op, ast.Add):
+                return left + right
+            if isinstance(current.op, ast.Sub):
+                return left - right
+            if isinstance(current.op, ast.Mult):
+                return left * right
+            if right == 0:
+                raise ZeroDivisionError
+            return left / right
+        raise ValueError("unsupported arithmetic expression")
+
+    try:
+        result = float(evaluate(node))
+    except (ValueError, TypeError, ZeroDivisionError, OverflowError):
+        return None
+    return result if math.isfinite(result) else None
+
+
+def arithmetic_explanations_are_consistent(text: str) -> bool:
+    """Reject explanations containing a false fully-numeric equality chain."""
+    for match in _ARITHMETIC_CHARS.finditer(text or ""):
+        chain = match.group(0).strip(" ,，;；:：。")
+        if "=" not in chain:
+            continue
+        values = [_safe_numeric_eval(part) for part in chain.split("=")]
+        if len(values) < 2 or any(value is None for value in values):
+            continue
+        if any(not math.isclose(values[0], value, rel_tol=1e-9, abs_tol=1e-9) for value in values[1:]):
+            return False
+    return True
 
 _DIFFICULTY_LABEL = {'easy': '简单', 'medium': '中等', 'hard': '困难'}
 
@@ -25,8 +97,9 @@ _VARIETY_ANGLES = [
 
 
 def llm_available() -> bool:
-    """是否具备调用 LLM 的条件（配置了 API_KEY）。离线/本地无 key 时返回 False。"""
-    return bool(os.getenv('API_KEY'))
+    """是否启用真实 LLM 出题；可通过 LLM_PRACTICE_ENABLED=false 显式关闭。"""
+    enabled = os.getenv('LLM_PRACTICE_ENABLED', 'true').strip().lower()
+    return enabled not in {'0', 'false', 'no', 'off'} and bool(os.getenv('API_KEY'))
 
 
 def build_prompt(
@@ -35,6 +108,8 @@ def build_prompt(
     count: int,
     subject: Optional[str],
     user_desc: Optional[str] = None,
+    stage: Optional[str] = None,
+    grade: Optional[str] = None,
 ) -> str:
     """构造出题提示词。要求答案简洁、可自动判分，输出严格 JSON。
 
@@ -49,10 +124,18 @@ def build_prompt(
     lines = [
         f'你是一名资深命题老师。请为{subj}知识点「{kp_name}」出 {count} 道{diff_label}难度的练习题。',
     ]
-    if user_desc:
-        desc = user_desc.strip()[:200]
+    if stage or grade:
+        lines.append(f'学生范围：{stage or ""} {grade or ""}。所有题目必须严格位于该学段和年级课程范围内。')
+    if '随机巩固' in kp_name:
         lines.append(
-            f'学生的原始困惑/薄弱点描述如下，请让题目紧扣其真实问题、有针对性地帮助其突破：\n'
+            f'学生没有指定薄弱知识点。请从{grade or "当前年级"}{subject or "当前学科"}'
+            '课程范围内抽取有代表性的具体知识点；每道题仍必须标注准确、具体的知识点名称，'
+            '不得使用“综合知识点”“其他”或“未知知识点”。'
+        )
+    if user_desc:
+        desc = user_desc.strip()[:500]
+        lines.append(
+            f'下面包含本次任务类型和学生原始输入。必须遵循任务策略并紧扣本次问题出题：\n'
             f'“{desc}”'
         )
     lines.append('要求：')
@@ -61,12 +144,23 @@ def build_prompt(
         '2. 每道题都要有明确、唯一的标准答案，答案尽量简洁并采用标准写法，'
         '便于程序自动判分（例如：x=5、1/2、0.8、C、正确）；'
     )
-    lines.append('3. 每道题都要给出简短解析；')
+    lines.append('3. 每道题都要给出简短、确定的解析，解析推导结果必须与标准答案完全一致；')
     lines.append(f'4. 本次出题请{angle}，在保证知识点准确的前提下变换题目情境与数值；')
     lines.append('5. 只输出一个 JSON 数组，不要输出任何多余文字或 markdown 代码块标记。')
     lines.append(f'（本批次编号 {batch}，仅用于区分批次，不要出现在题目中。）')
+    lines.append(
+        '6. 同时给出 answer_type（numeric/symbolic/set/proof/code/short_text）和 grading_spec；'
+    )
+    lines.append(
+        'grading_spec 至少包含 acceptable_forms、required_points、unit、tolerance，'
+        '不适用时使用空数组或 null；'
+    )
     lines.append('输出格式（严格遵守字段名）：')
-    lines.append('[{"content": "题干", "ans": "标准答案", "analysis": "解析"}]')
+    lines.append(
+        '[{"content":"题干","knowledge_point_name":"具体知识点名称","ans":"标准答案","answer_type":"numeric",'
+        '"grading_spec":{"acceptable_forms":[],"required_points":[],'
+        '"unit":null,"tolerance":0},"analysis":"解析"}]'
+    )
     return '\n'.join(lines)
 
 
@@ -102,7 +196,23 @@ def parse_llm_questions(text: str) -> List[dict]:
         content = str(item.get('content') or item.get('question') or '').strip()
         ans = str(item.get('ans') or item.get('answer') or item.get('standard_answer') or '').strip()
         analysis = str(item.get('analysis') or item.get('explanation') or '').strip()
-        out.append({'content': content, 'ans': ans, 'analysis': analysis})
+        answer_type = str(item.get('answer_type') or 'short_text').strip().lower()
+        if answer_type not in {'numeric', 'symbolic', 'set', 'proof', 'code', 'short_text'}:
+            answer_type = 'short_text'
+        grading_spec = item.get('grading_spec')
+        if not isinstance(grading_spec, dict):
+            grading_spec = {}
+        parsed = {
+            'content': content,
+            'ans': ans,
+            'analysis': analysis,
+            'answer_type': answer_type,
+            'grading_spec': grading_spec,
+        }
+        knowledge_point_name = str(item.get('knowledge_point_name') or '').strip()
+        if knowledge_point_name:
+            parsed['knowledge_point_name'] = knowledge_point_name
+        out.append(parsed)
     return out
 
 
@@ -125,6 +235,7 @@ def _build_diverse_llm():
         api_key=api_key,
         base_url=base_url,
         temperature=0.9,
+        http_async_client=httpx.AsyncClient(trust_env=False),
     )
 
 
@@ -134,13 +245,15 @@ async def generate_questions_via_llm(
     count: int,
     subject: Optional[str] = None,
     user_desc: Optional[str] = None,
+    stage: Optional[str] = None,
+    grade: Optional[str] = None,
 ) -> List[dict]:
     """调用 LLM 生成题目并解析。异常上抛，由上层统一按“生成失败”处理（重试/清晰失败）。
 
     user_desc：用户诊断时的原始描述/薄弱点，注入提示词让题目更贴合真实困惑。
     出题使用高温度实例以提升多样性；若本模块无法构造，则回退到共享 get_llm。
     """
-    prompt = build_prompt(kp_name, difficulty, count, subject, user_desc)
+    prompt = build_prompt(kp_name, difficulty, count, subject, user_desc, stage, grade)
 
     llm = _build_diverse_llm()
     if llm is None:
@@ -151,3 +264,37 @@ async def generate_questions_via_llm(
     resp = await llm.ainvoke(prompt)
     text = getattr(resp, 'content', None) or str(resp)
     return parse_llm_questions(text)
+
+
+async def identify_knowledge_point_via_llm(
+    content: str,
+    subject: str,
+    stage: str,
+    grade: str,
+) -> Optional[str]:
+    """Classify an explicit learning question into one concrete curriculum point."""
+    if not llm_available():
+        return None
+    prompt = (
+        f'你是课程知识点分类器。学段：{stage}；年级：{grade}；学科：{subject}。'
+        f'学生输入：“{content[:500]}”\n'
+        '判断它对应的一个最具体、规范的教材知识点名称。'
+        '如果输入没有指定任何确定内容，只返回空字符串。'
+        '只输出 JSON：{"knowledge_point_name":"名称或空字符串"}'
+    )
+    try:
+        llm = _build_diverse_llm()
+        if llm is None:
+            from backend.agents.agent.get_llm import get_llm
+            llm = get_llm()
+        response = await llm.ainvoke(prompt)
+        raw = getattr(response, 'content', None) or str(response)
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not match:
+            return None
+        name = str(json.loads(match.group(0)).get('knowledge_point_name') or '').strip()
+        if not name or name in {'综合知识点', '其他', '未知知识点'}:
+            return None
+        return name[:128]
+    except Exception:
+        return None

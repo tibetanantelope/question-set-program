@@ -19,6 +19,25 @@ import pytest_asyncio
 from httpx import AsyncClient, ASGITransport
 
 from backend.main import app
+from backend.model import AsyncSessionLocal
+from backend.model.mastery import KnowledgeReviewRecord
+
+
+async def complete_required_review(user_id: int, knowledge_point_name: str) -> None:
+    """Create the prerequisite knowledge review used by correction-flow tests."""
+    async with AsyncSessionLocal() as session:
+        session.add(
+            KnowledgeReviewRecord(
+                user_id=user_id,
+                knowledge_point_name=knowledge_point_name,
+                review_mode="full",
+                quiz_score=2,
+                quiz_total=3,
+                answers=[1, 1, 1],
+                request_id=f"review-before-correction-{uuid.uuid4().hex}",
+            )
+        )
+        await session.commit()
 
 
 # ── Fixtures ──────────────────────────────────────────────
@@ -79,8 +98,8 @@ def _make_event(
 class TestMasteryService:
     """掌握度计算与错题创建"""
 
-    async def test_process_correct_easy_adds_3(self):
-        """简单题答对 +3"""
+    async def test_process_first_correct_easy_uses_evidence_model(self):
+        """首次简单题答对后给出有证据但仍保守的暂定分"""
         from backend.dao.mastery_mapper import get_mastery_mapper
         from backend.services.mastery_service.mastery_service import MasteryService
         from backend.schemas.response.mastery_response import AnswerResultEvent
@@ -103,13 +122,13 @@ class TestMasteryService:
             answered_at="2026-07-20T14:45:00+08:00",
         )
         result = await svc.process_answer(event)
-        assert result["mastery_before"] == 60, f"新知识点的初始掌握度应为 60，实际: {result['mastery_before']}"
-        assert result["mastery_after"] == 63, f"简单题答对应为 +3，实际: {result['mastery_after']}"
+        assert result["mastery_before"] == 50, f"内部中性先验应为 50，实际: {result['mastery_before']}"
+        assert result["mastery_after"] == 62, f"首次简单题答对后的暂定分应为 62，实际: {result['mastery_after']}"
         assert result["learning_status"] == "consolidating"
         assert result["mistake_id"] is None
 
-    async def test_process_medium_adds_5(self):
-        """中等题答对 +5"""
+    async def test_process_first_correct_medium_uses_evidence_model(self):
+        """首次中等题答对比简单题提供更强的正向证据"""
         from backend.dao.mastery_mapper import get_mastery_mapper
         from backend.services.mastery_service.mastery_service import MasteryService
         from backend.schemas.response.mastery_response import AnswerResultEvent
@@ -132,10 +151,10 @@ class TestMasteryService:
             answered_at="2026-07-20T14:45:00+08:00",
         )
         result = await svc.process_answer(event)
-        assert result["mastery_after"] == 65
+        assert result["mastery_after"] == 70
 
-    async def test_process_hard_adds_8(self):
-        """困难题答对 +8"""
+    async def test_process_first_correct_hard_uses_evidence_model(self):
+        """首次困难题答对提供更强的正向证据"""
         from backend.dao.mastery_mapper import get_mastery_mapper
         from backend.services.mastery_service.mastery_service import MasteryService
         from backend.schemas.response.mastery_response import AnswerResultEvent
@@ -158,10 +177,10 @@ class TestMasteryService:
             answered_at="2026-07-20T14:45:00+08:00",
         )
         result = await svc.process_answer(event)
-        assert result["mastery_after"] == 68
+        assert result["mastery_after"] == 78
 
-    async def test_process_wrong_subtracts_3(self):
-        """任意题答错 -3"""
+    async def test_process_first_wrong_hard_uses_evidence_model(self):
+        """首次困难题答错应降为低掌握度，而非仍显示接近及格"""
         from backend.dao.mastery_mapper import get_mastery_mapper
         from backend.services.mastery_service.mastery_service import MasteryService
         from backend.schemas.response.mastery_response import AnswerResultEvent
@@ -184,7 +203,7 @@ class TestMasteryService:
             answered_at="2026-07-20T14:45:00+08:00",
         )
         result = await svc.process_answer(event)
-        assert result["mastery_after"] == 57
+        assert result["mastery_after"] == 38
         assert result["learning_status"] == "weak"
         assert result["mistake_id"] is not None
 
@@ -371,6 +390,7 @@ class TestMistakeCorrectionFlow:
         result = await svc.process_answer(event)
         mistake_id = result["mistake_id"]
         assert mistake_id is not None, "答错应创建错题记录"
+        await complete_required_review(uid, event.knowledge_point_name)
 
         # 2. 查询错题列表
         mistake_list, _ = await mapper.list_mistakes(uid, status="pending")
@@ -425,6 +445,7 @@ class TestMistakeCorrectionFlow:
         )
         result = await svc.process_answer(event)
         mistake_id = result["mistake_id"]
+        await complete_required_review(uid, event.knowledge_point_name)
 
         # 订正
         corr_rid = f"corr-idem-{uuid.uuid4().hex}"
@@ -462,6 +483,7 @@ class TestMistakeCorrectionFlow:
         )
         result = await svc.process_answer(event)
         mistake_id = result["mistake_id"]
+        await complete_required_review(uid, event.knowledge_point_name)
 
         # 提交错误订正
         corr_rid = f"corr-wrong-{uuid.uuid4().hex}"

@@ -9,7 +9,7 @@ from backend.schemas.request.user_profile_update_request import UserProfileUpdat
 from backend.schemas.response.user_profile_response import StudentProfileSummary, UserProfileResponse
 
 # 画像完善必需字段
-_REQUIRED_FIELDS = {'stage', 'grade', 'subject', 'learning_goal'}
+_REQUIRED_FIELDS = {'stage', 'grade', 'subject'}
 
 
 class ProfileService:
@@ -84,7 +84,7 @@ class ProfileService:
 
     @staticmethod
     def _is_profile_complete(p: UserProfile) -> bool:
-        return bool(p.stage and p.grade and p.subject and p.learning_goal)
+        return bool(p.stage and p.grade and p.subject)
 
     @staticmethod
     def _to_summary(p: UserProfile) -> StudentProfileSummary:

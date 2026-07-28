@@ -3,6 +3,8 @@ __pycache__/
 *.py[cod]
 *.pyo
 .pytest_cache/
+pytest-cache-files-*/
+backend/tests/pytest-cache-files-*/
 .mypy_cache/
 .ruff_cache/
 
@@ -18,10 +20,15 @@ dist/
 frontend/dist/
 .vite/
 frontend/.vite/
+frontend/coverage/
+frontend/playwright-report/
+frontend/test-results/
 
 # Local env and runtime data
 .env
 backend/.env
+backend/secrets/*
+!backend/secrets/README.md
 chroma_db/
 backend/chroma_db/
 backend/chroma_runtime/

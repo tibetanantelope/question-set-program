@@ -105,7 +105,7 @@ class LearningMapper:
             return result.scalar_one_or_none()
 
     async def update_practice_result(
-        self, practice_id: int, correct_count: int, accuracy: float
+        self, practice_id: int, correct_count: int, accuracy: float, answer_request_id: str
     ) -> None:
         async with self.session_factory() as session:
             try:
@@ -117,6 +117,7 @@ class LearningMapper:
                     p.accuracy = accuracy
                     p.status = 'completed'
                     p.is_valid = True
+                    p.answer_request_id = answer_request_id
                     p.submitted_at = datetime.now()
                     await session.commit()
             except SQLAlchemyError:

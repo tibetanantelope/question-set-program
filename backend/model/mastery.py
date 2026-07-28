@@ -1,6 +1,6 @@
 """成员三：答案分析、掌握度、错题订正与复习相关数据模型"""
 
-from sqlalchemy import Integer, Column, String, DateTime, Text, Boolean, Date
+from sqlalchemy import Integer, Column, String, DateTime, Text, Boolean, Date, JSON
 from sqlalchemy.sql import func
 from backend.model import Base
 
@@ -20,6 +20,7 @@ class AnswerRecord(Base):
     is_correct = Column(Boolean, nullable=False, comment='判断结果')
     error_type = Column(String(32), nullable=True, comment='knowledge/calculation/reading/method')
     error_description = Column(Text, nullable=True, comment='错因说明')
+    subject = Column(String(32), nullable=True, index=True, comment='答题时的学科快照')
     request_id = Column(String(128), nullable=True, unique=True, comment='幂等标识')
     created_at = Column(DateTime, default=func.current_timestamp(), comment='答题时间')
 
@@ -32,8 +33,8 @@ class KnowledgeMastery(Base):
     user_id = Column(Integer, nullable=False, index=True, comment='用户ID')
     knowledge_point_id = Column(Integer, nullable=False, comment='知识点ID')
     knowledge_point_name = Column(String(128), nullable=False, comment='知识点名称')
-    mastery_score = Column(Integer, nullable=False, default=60, comment='掌握度: 0-100')
-    learning_status = Column(String(32), nullable=False, default='consolidating', comment='weak/consolidating/mastered')
+    mastery_score = Column(Integer, nullable=False, default=50, comment='掌握度内部估计: 0-100；无答题证据时前端显示待评估')
+    learning_status = Column(String(32), nullable=False, default='weak', comment='weak/consolidating/mastered')
     answer_count = Column(Integer, nullable=False, default=0, comment='累计答题次数')
     correct_count = Column(Integer, nullable=False, default=0, comment='累计答对次数')
     last_studied_at = Column(DateTime, default=None, comment='最近一次学习时间')
@@ -53,6 +54,7 @@ class Mistake(Base):
     standard_answer = Column(Text, nullable=True, comment='标准答案')
     knowledge_point_id = Column(Integer, nullable=True, comment='知识点ID')
     knowledge_point_name = Column(String(128), nullable=True, comment='知识点名称')
+    subject = Column(String(32), nullable=True, index=True, comment='答题时的学科快照')
     difficulty = Column(String(32), nullable=False, default='easy', comment='题目难度')
     error_type = Column(String(32), nullable=True, comment='knowledge/calculation/reading/method')
     correction_status = Column(String(32), nullable=False, default='pending', comment='pending/corrected/review_due')
@@ -79,3 +81,19 @@ class ReviewPlan(Base):
     status = Column(String(32), nullable=False, default='pending', comment='pending/completed')
     reviewed_at = Column(DateTime, default=None, comment='实际复习时间')
     created_at = Column(DateTime, default=func.current_timestamp(), comment='创建时间')
+
+
+class KnowledgeReviewRecord(Base):
+    """知识点概念复习与自测记录。"""
+    __tablename__ = 'knowledge_review_record'
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, nullable=False, index=True)
+    subject = Column(String(32), nullable=True, index=True)
+    knowledge_point_name = Column(String(128), nullable=False, index=True)
+    review_mode = Column(String(20), nullable=False, default='full')
+    quiz_score = Column(Integer, nullable=False, default=0)
+    quiz_total = Column(Integer, nullable=False, default=0)
+    answers = Column(JSON, nullable=True)
+    request_id = Column(String(128), nullable=False, unique=True)
+    completed_at = Column(DateTime, default=func.current_timestamp())

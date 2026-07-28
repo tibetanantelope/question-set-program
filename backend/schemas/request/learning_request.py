@@ -3,7 +3,7 @@
 字段严格对齐《智学伴接口与并行开发契约》第 8 节，冻结不可随意更改。
 """
 
-from typing import List
+from typing import List, Literal
 
 from pydantic import BaseModel, Field
 
@@ -13,6 +13,10 @@ class DiagnosisRequest(BaseModel):
     session_id: int | None = Field(None, description='关联学习会话ID（可选）')
     input_type: str = Field(..., description='question/learning_question/weakness')
     content: str = Field(..., min_length=1, max_length=2000, description='题目、问题或薄弱点描述')
+    knowledge_point_name: str | None = Field(
+        None, min_length=1, max_length=128,
+        description='系统推荐入口携带的可信知识点名称',
+    )
 
 
 class PracticeGenerateRequest(BaseModel):
@@ -20,14 +24,19 @@ class PracticeGenerateRequest(BaseModel):
     diagnosis_id: int | None = Field(None, description='关联诊断ID（可选）')
     question_count: int = Field(3, ge=3, le=5, description='题目数量，只能为 3~5')
     difficulty: str | None = Field(None, description='指定难度 easy/medium/hard（可选，用于"再练一组"沿用调整后的难度）')
+    subject: str | None = Field(None, min_length=1, max_length=32, description='推荐知识点对应的历史学科快照')
 
 
 class AnswerItem(BaseModel):
     """单题答案"""
     question_id: int = Field(..., description='题目ID')
-    answer: str = Field(..., description='学生答案')
+    answer: str = Field(..., max_length=4000, description='学生答案')
 
 
 class AnswerSubmitRequest(BaseModel):
     """提交练习答案请求 POST /learning/practices/{practice_id}/answers"""
     answers: List[AnswerItem] = Field(..., description='答案列表', min_length=1)
+
+
+class DetailedAnalysisRequest(BaseModel):
+    payment_method: Literal['points', 'vip'] = Field(description='points 或 vip')

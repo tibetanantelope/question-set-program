@@ -5,6 +5,7 @@ from langchain_openai import ChatOpenAI
 from llama_index.core.embeddings import BaseEmbedding
 from llama_index.core.bridge.pydantic import Field
 from openai import OpenAI, AsyncOpenAI
+import httpx
 import os
 
 from backend.env import load_backend_env
@@ -26,7 +27,10 @@ def get_llm(model: str = model, streaming: bool = False):
         api_key=api_key,
         base_url=base_url,
         temperature=0.3,
-        streaming=streaming
+        streaming=streaming,
+        # 运行环境可能配置开发用代理；模型服务可直连时不应继承无效代理，
+        # 否则 httpx 会在请求到达模型供应商之前直接连接失败。
+        http_async_client=httpx.AsyncClient(trust_env=False),
     )
     return llm
 
@@ -38,10 +42,18 @@ class DashScopeEmbedding(BaseEmbedding):
     api_base: str = Field(default="")
 
     def _get_client(self) -> OpenAI:
-        return OpenAI(api_key=self.api_key, base_url=self.api_base)
+        return OpenAI(
+            api_key=self.api_key,
+            base_url=self.api_base,
+            http_client=httpx.Client(trust_env=False),
+        )
 
     def _get_async_client(self) -> AsyncOpenAI:
-        return AsyncOpenAI(api_key=self.api_key, base_url=self.api_base)
+        return AsyncOpenAI(
+            api_key=self.api_key,
+            base_url=self.api_base,
+            http_client=httpx.AsyncClient(trust_env=False),
+        )
 
     def _embed(self, texts: List[str]) -> List[List[float]]:
         client = self._get_client()

@@ -3,11 +3,19 @@
 from datetime import date, datetime, timedelta, timezone
 from typing import List, Optional, Tuple
 
-from sqlalchemy import select, func, and_, case
+from sqlalchemy import select, func, and_, case, exists
 from sqlalchemy.exc import SQLAlchemyError
 
 from backend.model import AsyncSessionLocal
-from backend.model.mastery import AnswerRecord, KnowledgeMastery, Mistake, ReviewPlan
+from backend.model.mastery import (
+    AnswerRecord,
+    KnowledgeMastery,
+    KnowledgeReviewRecord,
+    Mistake,
+    ReviewPlan,
+)
+from backend.model.learning import Question
+from backend.model.learning_models import LearningRecord
 
 # 东八区
 _TZ = timezone(timedelta(hours=8))
@@ -16,6 +24,43 @@ _TZ = timezone(timedelta(hours=8))
 class MasteryMapper:
     def __init__(self, session_factory: AsyncSessionLocal):
         self.session_factory = session_factory
+
+    async def get_reviewed_mistake_ids(
+        self, user_id: int, mistake_ids: list[int]
+    ) -> set[int]:
+        """Return mistakes whose exact knowledge point was reviewed after the mistake."""
+        if not mistake_ids:
+            return set()
+        async with self.session_factory() as session:
+            stmt = (
+                select(Mistake.id)
+                .join(
+                    KnowledgeReviewRecord,
+                    and_(
+                        KnowledgeReviewRecord.user_id == Mistake.user_id,
+                        KnowledgeReviewRecord.knowledge_point_name
+                        == Mistake.knowledge_point_name,
+                        KnowledgeReviewRecord.completed_at >= Mistake.created_at,
+                        (
+                            (Mistake.subject.is_(None))
+                            | (KnowledgeReviewRecord.subject.is_(None))
+                            | (KnowledgeReviewRecord.subject == Mistake.subject)
+                        ),
+                    ),
+                )
+                .where(
+                    Mistake.user_id == user_id,
+                    Mistake.id.in_(mistake_ids),
+                )
+                .distinct()
+            )
+            return set((await session.execute(stmt)).scalars().all())
+
+    async def has_completed_review_for_mistake(
+        self, user_id: int, mistake: Mistake
+    ) -> bool:
+        reviewed = await self.get_reviewed_mistake_ids(user_id, [mistake.id])
+        return mistake.id in reviewed
 
     # ========== 答题记录 ==========
 
@@ -52,6 +97,22 @@ class MasteryMapper:
             )
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
+
+    async def get_mastery_by_name(
+        self, user_id: int, knowledge_point_name: str
+    ) -> Optional[KnowledgeMastery]:
+        """按具体知识点名称读取最近的真实掌握度记录。"""
+        async with self.session_factory() as session:
+            stmt = (
+                select(KnowledgeMastery)
+                .where(
+                    KnowledgeMastery.user_id == user_id,
+                    KnowledgeMastery.knowledge_point_name == knowledge_point_name,
+                )
+                .order_by(KnowledgeMastery.updated_at.desc(), KnowledgeMastery.id.desc())
+                .limit(1)
+            )
+            return (await session.execute(stmt)).scalar_one_or_none()
 
     async def create_mastery(self, mastery: KnowledgeMastery) -> KnowledgeMastery:
         """创建知识点掌握度记录。"""
@@ -144,6 +205,74 @@ class MasteryMapper:
             result = await session.execute(stmt)
             return [(row.d, int(row.avg_score)) for row in result.all()]
 
+    async def get_mastery_subjects(
+        self, user_id: int, knowledge_point_names: List[str]
+    ) -> dict[str, str]:
+        """按最近答题或错题快照推断知识点所属学科/大学课程。"""
+        if not knowledge_point_names:
+            return {}
+        async with self.session_factory() as session:
+            mapping: dict[str, str] = {}
+            rows = (
+                await session.execute(
+                    select(
+                        AnswerRecord.knowledge_point_name,
+                        AnswerRecord.subject,
+                        AnswerRecord.created_at,
+                    )
+                    .where(
+                        AnswerRecord.user_id == user_id,
+                        AnswerRecord.knowledge_point_name.in_(knowledge_point_names),
+                        AnswerRecord.subject.is_not(None),
+                        AnswerRecord.subject != '',
+                    )
+                    .order_by(AnswerRecord.created_at.desc())
+                )
+            ).all()
+            for name, subject, _ in rows:
+                if name and subject and name not in mapping:
+                    mapping[name] = subject
+
+            missing = [name for name in knowledge_point_names if name not in mapping]
+            if missing:
+                rows = (
+                    await session.execute(
+                        select(Mistake.knowledge_point_name, Mistake.subject, Mistake.created_at)
+                        .where(
+                            Mistake.user_id == user_id,
+                            Mistake.knowledge_point_name.in_(missing),
+                            Mistake.subject.is_not(None),
+                            Mistake.subject != '',
+                        )
+                        .order_by(Mistake.created_at.desc())
+                    )
+                ).all()
+                for name, subject, _ in rows:
+                    if name and subject and name not in mapping:
+                        mapping[name] = subject
+            missing = [name for name in knowledge_point_names if name not in mapping]
+            if missing:
+                rows = (
+                    await session.execute(
+                        select(
+                            LearningRecord.knowledge_point_name,
+                            LearningRecord.subject,
+                            LearningRecord.occurred_at,
+                        )
+                        .where(
+                            LearningRecord.user_id == user_id,
+                            LearningRecord.knowledge_point_name.in_(missing),
+                            LearningRecord.subject.is_not(None),
+                            LearningRecord.subject != '',
+                        )
+                        .order_by(LearningRecord.occurred_at.desc())
+                    )
+                ).all()
+                for name, subject, _ in rows:
+                    if name and subject and name not in mapping:
+                        mapping[name] = subject
+            return mapping
+
     # ========== 错题 ==========
 
     async def create_mistake(self, mistake: Mistake) -> Mistake:
@@ -177,6 +306,13 @@ class MasteryMapper:
                 Mistake.user_id == user_id,
                 Mistake.correction_request_id == request_id,
             )
+            result = await session.execute(stmt)
+            return result.scalar_one_or_none()
+
+    async def get_question(self, question_id: int) -> Optional[Question]:
+        """查询单道题目。"""
+        async with self.session_factory() as session:
+            stmt = select(Question).where(Question.id == question_id)
             result = await session.execute(stmt)
             return result.scalar_one_or_none()
 
@@ -232,12 +368,32 @@ class MasteryMapper:
         page: int = 1,
         page_size: int = 20,
         status: Optional[str] = None,
+        subject: Optional[str] = None,
+        knowledge_point_name: Optional[str] = None,
     ) -> Tuple[List[Mistake], int]:
         """分页查询错题列表。"""
         async with self.session_factory() as session:
             base = select(Mistake).where(Mistake.user_id == user_id)
-            if status:
+            if status == 'review_due':
+                today = date.today()
+                base = base.where(
+                    exists(
+                        select(ReviewPlan.id).where(
+                            ReviewPlan.mistake_id == Mistake.id,
+                            ReviewPlan.user_id == user_id,
+                            ReviewPlan.status == 'pending',
+                            ReviewPlan.review_date <= today,
+                        )
+                    )
+                )
+            elif status:
                 base = base.where(Mistake.correction_status == status)
+            if subject == "__unclassified__":
+                base = base.where((Mistake.subject.is_(None)) | (Mistake.subject == ""))
+            elif subject:
+                base = base.where(Mistake.subject == subject)
+            if knowledge_point_name:
+                base = base.where(Mistake.knowledge_point_name == knowledge_point_name)
             count_stmt = select(func.count()).select_from(base.subquery())
             total_result = await session.execute(count_stmt)
             total = total_result.scalar() or 0
@@ -250,6 +406,30 @@ class MasteryMapper:
             result = await session.execute(stmt)
             items = list(result.scalars().all())
             return items, total
+
+    async def list_mistake_subjects(self, user_id: int) -> List[str]:
+        """Return all non-empty subject snapshots represented in the mistake book."""
+        async with self.session_factory() as session:
+            stmt = (
+                select(Mistake.subject)
+                .where(
+                    Mistake.user_id == user_id,
+                    Mistake.subject.is_not(None),
+                    Mistake.subject != '',
+                )
+                .distinct()
+                .order_by(Mistake.subject)
+            )
+            return list((await session.execute(stmt)).scalars().all())
+
+    async def has_unclassified_mistakes(self, user_id: int) -> bool:
+        """Whether legacy mistakes without a trustworthy subject snapshot exist."""
+        async with self.session_factory() as session:
+            stmt = select(Mistake.id).where(
+                Mistake.user_id == user_id,
+                (Mistake.subject.is_(None)) | (Mistake.subject == ""),
+            ).limit(1)
+            return (await session.execute(stmt)).scalar_one_or_none() is not None
 
     # ========== 复习计划 ==========
 
@@ -275,7 +455,7 @@ class MasteryMapper:
                 .join(Mistake, ReviewPlan.mistake_id == Mistake.id)
                 .where(
                     ReviewPlan.user_id == user_id,
-                    ReviewPlan.review_date == today,
+                    ReviewPlan.review_date <= today,
                     ReviewPlan.status == 'pending',
                 )
                 .order_by(ReviewPlan.id)
@@ -283,20 +463,93 @@ class MasteryMapper:
             result = await session.execute(stmt)
             return [(row.ReviewPlan, row.Mistake) for row in result.all()]
 
-    async def complete_review(self, review_id: int) -> None:
-        """标记复习计划为已完成。"""
+    async def reveal_review(
+        self, review_id: int, user_id: int, mistake_id: int
+    ) -> Optional[Tuple[ReviewPlan, Mistake, Optional[str]]]:
+        """Mark one due review as revealed and return its answer context."""
+        async with self.session_factory() as session:
+            stmt = (
+                select(ReviewPlan, Mistake, Question.analysis)
+                .join(Mistake, ReviewPlan.mistake_id == Mistake.id)
+                .outerjoin(Question, Mistake.question_id == Question.id)
+                .where(
+                    ReviewPlan.id == review_id,
+                    ReviewPlan.user_id == user_id,
+                    ReviewPlan.mistake_id == mistake_id,
+                    ReviewPlan.status == 'pending',
+                    ReviewPlan.review_date <= date.today(),
+                )
+            )
+            row = (await session.execute(stmt)).first()
+            if not row:
+                return None
+            plan, mistake, analysis = row
+            plan.status = 'revealed'
+            plan.reviewed_at = datetime.now(_TZ)
+            await session.commit()
+            return plan, mistake, analysis
+
+    async def get_review_progress(
+        self, user_id: int, mistake_id: int, review_id: int
+    ) -> Tuple[int, int, Optional[date]]:
+        """Return current round, total standard rounds and next pending date."""
+        async with self.session_factory() as session:
+            rows = (
+                await session.execute(
+                    select(ReviewPlan.id, ReviewPlan.review_date, ReviewPlan.status)
+                    .where(
+                        ReviewPlan.user_id == user_id,
+                        ReviewPlan.mistake_id == mistake_id,
+                    )
+                    .order_by(ReviewPlan.review_date, ReviewPlan.id)
+                )
+            ).all()
+            current_round = next(
+                (index for index, row in enumerate(rows, start=1) if row.id == review_id),
+                0,
+            )
+            next_date = next(
+                (
+                    row.review_date
+                    for row in rows
+                    if row.status == 'pending' and row.id != review_id
+                ),
+                None,
+            )
+            return current_round, len(rows), next_date
+
+    async def complete_review(self, review_id: int, user_id: int, mistake_id: int) -> bool:
+        """仅在复习计划属于当前用户和错题时标记完成。"""
         async with self.session_factory() as session:
             try:
-                stmt = select(ReviewPlan).where(ReviewPlan.id == review_id)
+                stmt = select(ReviewPlan).where(
+                    ReviewPlan.id == review_id,
+                    ReviewPlan.user_id == user_id,
+                    ReviewPlan.mistake_id == mistake_id,
+                    ReviewPlan.status == 'pending',
+                )
                 r = await session.execute(stmt)
                 plan = r.scalar_one_or_none()
-                if plan:
-                    plan.status = 'completed'
-                    plan.reviewed_at = datetime.now(_TZ)
-                    await session.commit()
+                if not plan:
+                    return False
+                plan.status = 'completed'
+                plan.reviewed_at = datetime.now(_TZ)
+                await session.commit()
+                return True
             except SQLAlchemyError:
                 await session.rollback()
                 raise
+
+    async def has_pending_review(self, review_id: int, user_id: int, mistake_id: int) -> bool:
+        """校验待复习计划的归属，避免通过其他用户的 review_id 完成复习。"""
+        async with self.session_factory() as session:
+            stmt = select(ReviewPlan.id).where(
+                ReviewPlan.id == review_id,
+                ReviewPlan.user_id == user_id,
+                ReviewPlan.mistake_id == mistake_id,
+                ReviewPlan.status == 'pending',
+            )
+            return (await session.execute(stmt)).scalar_one_or_none() is not None
 
 
 async def get_mastery_mapper() -> MasteryMapper:

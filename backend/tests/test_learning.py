@@ -25,6 +25,19 @@ from backend.model import Base
 from backend.model.learning import LearningSession, Diagnosis, Practice, Question
 from backend.dao.learning_mapper import LearningMapper
 from backend.services.learning_service.learning_service import LearningService
+from backend.services.learning_service.question_generator import arithmetic_explanations_are_consistent
+
+
+def test_arithmetic_explanation_consistency_rejects_false_step():
+    assert not arithmetic_explanations_are_consistent(
+        "先算6+3=9，再算9×8=72，最后72−5=64。"
+    )
+
+
+def test_arithmetic_explanation_consistency_accepts_correct_steps():
+    assert arithmetic_explanations_are_consistent(
+        "先算6+3=9，再算9×8=72，最后72−5=67。"
+    )
 from backend.schemas.request.learning_request import (
     DiagnosisRequest,
     PracticeGenerateRequest,
@@ -211,6 +224,55 @@ class TestDifficultyAdjustment:
 
 
 class TestKnowledgePointCoverage:
+    async def test_ambiguous_input_uses_random_scope_not_generic_label(
+        self, service: LearningService, monkeypatch
+    ):
+        monkeypatch.setenv("LLM_PRACTICE_ENABLED", "false")
+        diag = await service.diagnose(
+            USER_ID,
+            DiagnosisRequest(input_type="weakness", content="我不知道练什么，随便出几道题"),
+        )
+        assert diag.knowledge_point_name == "七年级数学随机巩固"
+        assert diag.knowledge_point_name != "综合知识点"
+
+    async def test_generated_questions_keep_concrete_knowledge_points(
+        self, service: LearningService
+    ):
+        raw = [
+            {
+                "content": "题目A",
+                "knowledge_point_name": "有理数加法",
+                "ans": "1",
+                "analysis": "解析A",
+            },
+            {
+                "content": "题目B",
+                "knowledge_point_name": "绝对值",
+                "ans": "2",
+                "analysis": "解析B",
+            },
+            {
+                "content": "题目C",
+                "knowledge_point_name": "数轴",
+                "ans": "3",
+                "analysis": "解析C",
+            },
+        ]
+        svc = _make_service_with_generator(service, lambda kp, diff, count: raw)
+        diag = await svc.diagnose(
+            USER_ID,
+            DiagnosisRequest(input_type="weakness", content="我不知道练什么，随便出几道题"),
+        )
+        generated = await svc.generate_practice(
+            USER_ID,
+            "req-concrete-kps",
+            PracticeGenerateRequest(diagnosis_id=diag.diagnosis_id, question_count=3),
+        )
+        assert generated.knowledge_point_name == "数学多知识点练习"
+        assert [item.knowledge_point_name for item in generated.questions] == [
+            "有理数加法", "绝对值", "数轴"
+        ]
+
     async def test_probability_uses_probability_bank(self, service: LearningService):
         # 概率论应被识别，且出题来自概率题库（题面含概率相关词，不再是方程）
         diag = await service.diagnose(
@@ -317,6 +379,25 @@ class TestIdempotency:
         assert ei.value.code == "PRACTICE_ALREADY_SUBMITTED"
         assert ei.value.status_code == 409
 
+    async def test_same_submit_request_can_retry_for_downstream_compensation(
+        self, service: LearningService
+    ):
+        gen = await service.generate_practice(
+            USER_ID, "req-idem-retry", PracticeGenerateRequest(question_count=3)
+        )
+        questions = await service.mapper.get_questions(gen.practice_id)
+        answers = [AnswerItem(question_id=q.id, answer=q.standard_answer) for q in questions]
+        request = AnswerSubmitRequest(answers=answers)
+
+        first = await service.submit_answers(
+            USER_ID, gen.practice_id, "req-sub-retry", request
+        )
+        retried = await service.submit_answers(
+            USER_ID, gen.practice_id, "req-sub-retry", request
+        )
+
+        assert retried.model_dump() == first.model_dump()
+
 
 # ── 6. 画像未完善 ──────────────────────────────────────────
 
@@ -345,7 +426,13 @@ class TestParseLlmQuestions:
         text = '[{"content":"1+1=?","ans":"2","analysis":"加法"}]'
         result = parse_llm_questions(text)
         assert len(result) == 1
-        assert result[0] == {"content": "1+1=?", "ans": "2", "analysis": "加法"}
+        assert result[0] == {
+            "content": "1+1=?",
+            "ans": "2",
+            "analysis": "加法",
+            "answer_type": "short_text",
+            "grading_spec": {},
+        }
 
     def test_strips_markdown_fence(self):
         text = '```json\n[{"content":"Q","ans":"A","analysis":"E"}]\n```'
@@ -378,6 +465,89 @@ class TestParseLlmQuestions:
         result = parse_llm_questions(text)
         assert result[0]["ans"] == "42"
         assert result[0]["analysis"] == "因为答案是42"
+
+
+class TestLlmPracticeGeneration:
+    async def test_configured_llm_is_preferred_over_question_bank(self, monkeypatch):
+        import backend.services.learning_service.question_generator as generator
+
+        async def fake_generate(kp_name, difficulty, count, subject, user_desc):
+            assert (kp_name, subject, user_desc) == ("一元一次方程", "数学", "移项容易出错")
+            return [
+                {"content": f"LLM题{i}", "ans": str(i), "analysis": "个性化解析"}
+                for i in range(count)
+            ]
+
+        monkeypatch.setattr(generator, "llm_available", lambda: True)
+        monkeypatch.setattr(generator, "generate_questions_via_llm", fake_generate)
+        result = await LearningService()._raw_generate_questions(
+            "一元一次方程", "easy", 3, "数学", "移项容易出错"
+        )
+        assert [item["content"] for item in result] == ["LLM题0", "LLM题1", "LLM题2"]
+
+    async def test_llm_failure_falls_back_to_question_bank(self, monkeypatch):
+        import backend.services.learning_service.question_generator as generator
+
+        async def failed_generate(*_args):
+            raise RuntimeError("provider unavailable")
+
+        monkeypatch.setattr(generator, "llm_available", lambda: True)
+        monkeypatch.setattr(generator, "generate_questions_via_llm", failed_generate)
+        result = await LearningService()._raw_generate_questions(
+            "一元一次方程", "easy", 3, "数学", None
+        )
+        assert len(result) == 3
+        assert all(item["content"] and item["ans"] and item["analysis"] for item in result)
+
+
+class TestHybridAnswerJudging:
+    def test_single_numeric_answer_accepts_unit_and_explanation(self):
+        service = LearningService()
+        assert service._judge_answer("19元", "19") is True
+        assert service._judge_answer("答案是 19.0 元", "19") is True
+
+    def test_relationship_answer_is_not_decided_by_numeric_extraction(self):
+        service = LearningService()
+        assert service._judge_answer("结果比系统价格高4.5元", "低5.6元") is False
+
+    async def test_semantic_ai_grade_can_accept_equivalent_expression(
+        self, service: LearningService, monkeypatch
+    ):
+        generated = await service.generate_practice(
+            USER_ID,
+            "req-semantic-judge",
+            PracticeGenerateRequest(question_count=3),
+        )
+        questions = await service.mapper.get_questions(generated.practice_id)
+
+        async def fake_judge(items, *, review=False):
+            return {
+                item["question_id"]: {
+                    "verdict": "correct",
+                    "confidence": 0.96,
+                    "reason": "表达不同但含义等价",
+                    "error_type": None,
+                    "suggestion": "",
+                }
+                for item in items
+            }
+
+        monkeypatch.setattr(
+            "backend.services.learning_service.learning_service.judge_answers_via_llm",
+            fake_judge,
+        )
+        answers = [
+            AnswerItem(question_id=q.id, answer=f"用文字表达的等价答案 {index}")
+            for index, q in enumerate(questions, 1)
+        ]
+        result = await service.submit_answers(
+            USER_ID,
+            generated.practice_id,
+            "req-semantic-submit",
+            AnswerSubmitRequest(answers=answers),
+        )
+        assert result.correct_count == 3
+        assert all(item.is_correct for item in result.results)
 
     def test_empty_string_raises(self):
         with pytest.raises(ValueError):

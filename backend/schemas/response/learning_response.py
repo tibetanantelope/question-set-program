@@ -4,7 +4,7 @@
 练习获取接口不得返回 standard_answer；标准答案与解析只在提交后返回。
 """
 
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -17,8 +17,17 @@ class DiagnosisResponse(BaseModel):
     knowledge_point_name: Optional[str] = Field(None, description='识别出的知识点名称')
     mastery_score: int = Field(description='当前掌握度: 0-100')
     learning_status: str = Field(description='weak/consolidating/mastered')
+    mastery_evidence: str = Field(
+        'self_report',
+        description='historical=来自历史答题；self_report=仅用于安排起始练习难度',
+    )
+    mastery_evidence_text: Optional[str] = Field(None, description='掌握度数据来源说明')
     weakness: Optional[str] = Field(None, description='薄弱点分析')
     practice_suggestion: Optional[str] = Field(None, description='建议练习方向')
+    concept_explanation: Optional[dict[str, Any]] = Field(
+        None,
+        description='概念答疑专用讲解：摘要、关键要点、核心结构、易混点和示例',
+    )
 
 
 # ==================== 练习生成 8.2 / 查询 8.3 ====================
@@ -37,6 +46,7 @@ class PracticeResponse(BaseModel):
     practice_id: int = Field(description='练习组ID')
     knowledge_point_id: Optional[int] = Field(None, description='知识点ID')
     knowledge_point_name: Optional[str] = Field(None, description='知识点名称')
+    subject: Optional[str] = Field(None, description='生成练习时的学科快照')
     difficulty: str = Field(description='难度')
     status: str = Field(description='in_progress/completed')
     questions: List[QuestionItem] = Field(default_factory=list, description='题目列表')

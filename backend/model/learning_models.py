@@ -1,7 +1,8 @@
 """成员四数据模型：学习记录、每日计划、站内提醒、学情报告"""
 
 from sqlalchemy import (
-    Integer, Column, String, DateTime, Date, JSON, DECIMAL, SmallInteger, ForeignKey
+    Integer, Column, String, DateTime, Date, JSON, DECIMAL, SmallInteger, ForeignKey,
+    UniqueConstraint,
 )
 from sqlalchemy.sql import func
 
@@ -41,12 +42,16 @@ class DailyPlan(Base):
 
 class Notification(Base):
     __tablename__ = 'notification'
+    __table_args__ = (
+        UniqueConstraint('user_id', 'dedupe_key', name='uq_notification_user_dedupe'),
+    )
 
     id = Column(Integer, primary_key=True, autoincrement=True)
     user_id = Column(Integer, ForeignKey('user.id', ondelete='CASCADE'), nullable=False, index=True)
     type = Column(String(20), nullable=False, comment='review_due/daily_plan/vip_expiring')
     title = Column(String(200), nullable=False)
     content = Column(String(500), default=None)
+    dedupe_key = Column(String(100), default=None, comment='同一用户的提醒幂等键')
     is_read = Column(SmallInteger, nullable=False, default=0)
     created_at = Column(DateTime, nullable=False, default=func.current_timestamp())
 

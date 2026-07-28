@@ -6,9 +6,9 @@ from math import ceil
 from typing import Any, Dict, List, Optional, Tuple
 from zoneinfo import ZoneInfo
 
-from sqlalchemy import select, func, and_, text
+from sqlalchemy import select, func, and_, case, text
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import IntegrityError
 
 from backend.core.exceptions import BusinessError
 from backend.middleware.logging import get_logger
@@ -17,6 +17,8 @@ from backend.model.learning_models import (
     LearningRecord, DailyPlan, Notification
 )
 from backend.model.user_profile import UserProfile
+from backend.model.vip_info import VipInfo
+from backend.model.mastery import AnswerRecord, Mistake, ReviewPlan
 
 logger = get_logger(__name__)
 
@@ -52,7 +54,11 @@ class RecordService:
 
             if record_type:
                 conditions.append(LearningRecord.record_type == record_type)
-            if subject:
+            if subject == "__unclassified__":
+                conditions.append(
+                    (LearningRecord.subject.is_(None)) | (LearningRecord.subject == "")
+                )
+            elif subject:
                 conditions.append(LearningRecord.subject == subject)
             if date_from:
                 conditions.append(LearningRecord.occurred_at >= f"{date_from} 00:00:00")
@@ -92,39 +98,56 @@ class RecordService:
             pages = ceil(total / page_size) if total else 0
             return items, total, pages
 
+    async def list_record_subjects(self, user_id: int) -> List[str]:
+        """Return all non-empty subject snapshots represented in learning records."""
+        async with AsyncSessionLocal() as session:
+            stmt = (
+                select(LearningRecord.subject)
+                .where(
+                    LearningRecord.user_id == user_id,
+                    LearningRecord.subject.is_not(None),
+                    LearningRecord.subject != '',
+                )
+                .distinct()
+                .order_by(LearningRecord.subject)
+            )
+            return list((await session.execute(stmt)).scalars().all())
+
+    async def has_unclassified_records(self, user_id: int) -> bool:
+        """Whether legacy records without a trustworthy subject snapshot exist."""
+        async with AsyncSessionLocal() as session:
+            stmt = select(LearningRecord.id).where(
+                LearningRecord.user_id == user_id,
+                (LearningRecord.subject.is_(None)) | (LearningRecord.subject == ""),
+            ).limit(1)
+            return (await session.execute(stmt)).scalar_one_or_none() is not None
+
     async def get_stats_summary(self, user_id: int) -> Dict:
         """获取学习统计摘要（用于学习记录页顶部卡片）"""
         async with AsyncSessionLocal() as session:
-            # 练习组数
-            practice_q = select(func.count()).select_from(LearningRecord).where(
-                and_(
-                    LearningRecord.user_id == user_id,
-                    LearningRecord.record_type.in_(['practice', 'correction']),
+            row = (
+                await session.execute(
+                    select(
+                        func.sum(
+                            case(
+                                (
+                                    LearningRecord.record_type.in_(("practice", "correction")),
+                                    1,
+                                ),
+                                else_=0,
+                            )
+                        ),
+                        func.sum(LearningRecord.question_count),
+                        func.avg(LearningRecord.accuracy),
+                        func.sum(LearningRecord.mastery_change),
+                    ).where(LearningRecord.user_id == user_id)
                 )
-            )
-            practice_count = (await session.execute(practice_q)).scalar() or 0
-
-            # 总题数
-            question_q = select(func.sum(LearningRecord.question_count)).where(
-                LearningRecord.user_id == user_id
-            )
-            question_count = (await session.execute(question_q)).scalar() or 0
-
-            # 平均正确率
-            accuracy_q = select(func.avg(LearningRecord.accuracy)).where(
-                and_(
-                    LearningRecord.user_id == user_id,
-                    LearningRecord.accuracy.isnot(None),
-                )
-            )
-            avg_accuracy = (await session.execute(accuracy_q)).scalar()
+            ).one()
+            practice_count = row[0] or 0
+            question_count = row[1] or 0
+            avg_accuracy = row[2]
             avg_accuracy = round(float(avg_accuracy), 1) if avg_accuracy else 0.0
-
-            # 掌握度变化总和
-            mastery_q = select(func.sum(LearningRecord.mastery_change)).where(
-                LearningRecord.user_id == user_id
-            )
-            mastery_change = (await session.execute(mastery_q)).scalar() or 0
+            mastery_change = row[3] or 0
 
             return {
                 "practice_count": practice_count,
@@ -161,6 +184,7 @@ class RecordService:
                 user_id=event.user_id,
                 record_type="correction",
                 title=f"错题订正 - {event.knowledge_point_name or '知识点'}",
+                subject=event.subject,
                 knowledge_point_name=event.knowledge_point_name,
                 question_count=1,
                 correct_count=1 if event.first_success else 0,
@@ -217,19 +241,17 @@ class RecordService:
     async def get_home_recommendations(self, user_id: int) -> Dict:
         """获取首页主要推荐 + 次要推荐"""
         today = _today()
-        primary = None
         secondary: List[Dict] = []
 
         # 优先级 1：今日到期的错题复习
-        primary = await self._get_review_due_recommendation(user_id, today)
-
-        # 优先级 2：低掌握度且近期学过的知识点
-        if not primary:
-            primary = await self._get_low_mastery_recommendation(user_id)
+        review_due = await self._get_review_due_recommendation(user_id, today)
+        low_mastery_list = await self._get_low_mastery_list(user_id)
+        primary = review_due or (low_mastery_list[0] if low_mastery_list else None)
 
         # 优先级 2 的其它项进入 secondary
-        low_mastery_list = await self._get_low_mastery_list(user_id)
         for item in low_mastery_list[:3]:
+            if item is primary:
+                continue
             secondary.append(item)
 
         # 优先级 3：学习目标相关内容
@@ -248,13 +270,13 @@ class RecordService:
             async with AsyncSessionLocal() as session:
                 sql = text(
                     """
-                    SELECT m.id, m.knowledge_point_name, COUNT(*) as cnt
+                    SELECT m.id, m.knowledge_point_name, COUNT(*) as cnt, m.subject
                     FROM mistake m
                     INNER JOIN review_plan rp ON rp.mistake_id = m.id
                     WHERE m.user_id = :uid
                       AND rp.review_date = :today
-                      AND rp.is_completed = 0
-                    GROUP BY m.id, m.knowledge_point_name
+                      AND rp.status = 'pending'
+                    GROUP BY m.id, m.knowledge_point_name, m.subject
                     LIMIT 1
                     """
                 )
@@ -266,6 +288,8 @@ class RecordService:
                         "title": f"复习{row[1] or '历史'}错题",
                         "description": f"有 {row[2]} 道错题今日到期",
                         "target_id": row[0],
+                        "knowledge_point_name": row[1],
+                        "subject": row[3],
                         "priority": 1,
                     }
         except Exception as e:
@@ -284,11 +308,23 @@ class RecordService:
             async with AsyncSessionLocal() as session:
                 sql = text(
                     """
-                    SELECT km.id, km.knowledge_point_name, km.mastery_score
+                    SELECT km.id, km.knowledge_point_name, km.mastery_score,
+                           km.answer_count, km.correct_count,
+                           (
+                               SELECT ar.subject
+                               FROM answer_record ar
+                               WHERE ar.user_id = km.user_id
+                                 AND ar.knowledge_point_name = km.knowledge_point_name
+                                 AND ar.subject IS NOT NULL
+                                 AND ar.subject <> ''
+                               ORDER BY ar.created_at DESC
+                               LIMIT 1
+                           ) AS subject
                     FROM knowledge_mastery km
                     WHERE km.user_id = :uid
                       AND km.mastery_score < 60
-                    ORDER BY km.last_studied_at DESC
+                      AND km.answer_count > 0
+                    ORDER BY km.mastery_score ASC, km.last_studied_at DESC
                     LIMIT 5
                     """
                 )
@@ -299,8 +335,18 @@ class RecordService:
                     items.append({
                         "type": "practice",
                         "title": f"巩固{row[1]}",
-                        "description": f"当前掌握度 {row[2]}，建议加强练习",
+                        "description": (
+                            f"「{row[1]}」历史答题 {row[4]}/{row[3]}，"
+                            f"知识点掌握度 {row[2]}%；"
+                            + (
+                                "在当前薄弱知识点中掌握度最低，因此建议优先巩固"
+                                if i == 0 else "仍低于 60%，建议继续巩固"
+                            )
+                        ),
+                        "selection_reason": "lowest_mastery" if i == 0 else "low_mastery",
                         "target_id": row[0],
+                        "knowledge_point_name": row[1],
+                        "subject": row[5],
                         "priority": 2,
                     })
                 return items
@@ -358,43 +404,60 @@ class RecordService:
                         "title": "开始今日练习",
                         "description": "完成一组练习保持学习节奏",
                         "target_id": None,
+                        "training_scope": "daily_subject",
                         "priority": 3,
                     }]
 
-                goal_map = {
-                    "daily": "日常巩固",
-                    "weakness": "薄弱点补习",
-                    "exam": "考试复习",
-                }
-                goal = (profile.learning_goal or "daily")
                 subject = (profile.subject or "学科")
+                # 优先把“今日练习”落实为近期该学科表现较弱的具体知识点。
+                # 若没有历史记录，前端会退回当前年级、当前学科的随机巩固。
+                recent_focus = (
+                    await session.execute(
+                        select(
+                            AnswerRecord.knowledge_point_name,
+                            func.avg(
+                                case(
+                                    (AnswerRecord.is_correct.is_(True), 1.0),
+                                    else_=0.0,
+                                )
+                            ).label("accuracy"),
+                            func.max(AnswerRecord.created_at).label("last_answered_at"),
+                        )
+                        .where(
+                            AnswerRecord.user_id == user_id,
+                            AnswerRecord.subject == subject,
+                            AnswerRecord.knowledge_point_name.isnot(None),
+                            AnswerRecord.knowledge_point_name != "",
+                            AnswerRecord.knowledge_point_name.notin_(
+                                ["综合知识点", "其他", "未知知识点", "随机巩固"]
+                            ),
+                            ~AnswerRecord.knowledge_point_name.like("%随机巩固%"),
+                        )
+                        .group_by(AnswerRecord.knowledge_point_name)
+                        .order_by(
+                            text("accuracy ASC"),
+                            text("last_answered_at DESC"),
+                        )
+                        .limit(1)
+                    )
+                ).first()
 
-                items = []
-                if goal in ("weakness", "daily"):
-                    items.append({
-                        "type": "practice",
-                        "title": f"{subject}薄弱点专项练习",
-                        "description": f"基于「{goal_map.get(goal, '日常巩固')}」目标推荐",
-                        "target_id": None,
-                        "priority": 3,
-                    })
-                elif goal == "exam":
-                    items.append({
-                        "type": "practice",
-                        "title": f"{subject}考试复习综合练习",
-                        "description": "基于「考试复习」目标推荐",
-                        "target_id": None,
-                        "priority": 3,
-                    })
-                if not items:
-                    items.append({
-                        "type": "practice",
-                        "title": "开始今日练习",
-                        "description": "完成一组练习保持学习节奏",
-                        "target_id": None,
-                        "priority": 3,
-                    })
-                return items
+                return [{
+                    "type": "practice",
+                    "title": f"开始今日{subject}练习",
+                    "description": (
+                        f"根据近期记录，优先训练「{recent_focus.knowledge_point_name}」"
+                        if recent_focus
+                        else f"暂无可用历史记录，将自动安排{profile.grade or ''}{subject}巩固训练"
+                    ),
+                    "target_id": None,
+                    "knowledge_point_name": (
+                        recent_focus.knowledge_point_name if recent_focus else None
+                    ),
+                    "subject": subject,
+                    "training_scope": "recent_weakness" if recent_focus else "daily_subject",
+                    "priority": 3,
+                }]
         except Exception as e:
             logger.warning("Goal recommendation failed: %s", e)
             return [{
@@ -402,6 +465,7 @@ class RecordService:
                 "title": "开始今日练习",
                 "description": "完成一组练习保持学习节奏",
                 "target_id": None,
+                "training_scope": "daily_subject",
                 "priority": 3,
             }]
 
@@ -431,13 +495,18 @@ class RecordService:
                 await session.commit()
                 await session.refresh(plan)
 
-            tasks = self._build_plan_tasks(plan)
+            pending_corrections = await self._get_pending_correction_count(user_id, today)
+            tasks = self._build_plan_tasks(plan, pending_corrections)
+            task_completed = sum(1 for task in tasks if task["status"] == "completed")
+            completed = task_completed == len(tasks)
 
             return {
                 "date": today.isoformat(),
                 "target_groups": plan.target_groups,
                 "completed_groups": plan.completed_groups,
-                "completed": bool(plan.is_completed),
+                "completed": completed,
+                "task_completed": task_completed,
+                "task_total": len(tasks),
                 "tasks": tasks,
             }
 
@@ -484,7 +553,31 @@ class RecordService:
             pass
         return 3  # 默认值
 
-    def _build_plan_tasks(self, plan: DailyPlan) -> List[Dict]:
+    async def _get_pending_correction_count(self, user_id: int, today: date) -> int:
+        """待订正错题和已到期复习都属于今日错题任务。"""
+        async with AsyncSessionLocal() as session:
+            mistake_count = (
+                await session.execute(
+                    select(func.count(Mistake.id)).where(
+                        Mistake.user_id == user_id,
+                        Mistake.correction_status.in_(("pending", "review_due")),
+                    )
+                )
+            ).scalar() or 0
+            review_count = (
+                await session.execute(
+                    select(func.count(ReviewPlan.id)).where(
+                        ReviewPlan.user_id == user_id,
+                        ReviewPlan.status == "pending",
+                        ReviewPlan.review_date <= today,
+                    )
+                )
+            ).scalar() or 0
+            return int(mistake_count) + int(review_count)
+
+    def _build_plan_tasks(
+        self, plan: DailyPlan, pending_corrections: int = 0
+    ) -> List[Dict]:
         """根据计划生成今日任务列表"""
         tasks = []
         remaining = plan.target_groups - plan.completed_groups
@@ -494,18 +587,22 @@ class RecordService:
                 "task_type": "practice",
                 "title": f"完成 {remaining} 组推荐练习",
                 "status": "pending",
+                "reward_points": 5,
             })
         else:
             tasks.append({
                 "task_type": "practice",
                 "title": "今日练习目标已完成",
                 "status": "completed",
+                "reward_points": 5,
             })
-        tasks.append({
-            "task_type": "correction",
-            "title": "检查到期错题并完成订正",
-            "status": "pending",
-        })
+        if pending_corrections:
+            tasks.append({
+                "task_type": "correction",
+                "title": f"完成 {pending_corrections} 道待订正或到期错题",
+                "status": "pending",
+                "reward_points": 3,
+            })
         return tasks
 
     # ─── 站内提醒 ──────────────────────────────────────
@@ -514,6 +611,7 @@ class RecordService:
         self, user_id: int, page: int = 1, page_size: int = 20
     ) -> Tuple[List[Dict], int, int]:
         """分页查询站内提醒"""
+        await self.generate_daily_notifications(user_id)
         async with AsyncSessionLocal() as session:
             conditions = [Notification.user_id == user_id]
             count_q = select(func.count()).select_from(Notification).where(and_(*conditions))
@@ -545,6 +643,7 @@ class RecordService:
 
     async def get_unread_count(self, user_id: int) -> int:
         """获取未读通知数量"""
+        await self.generate_daily_notifications(user_id)
         async with AsyncSessionLocal() as session:
             q = select(func.count()).select_from(Notification).where(
                 and_(Notification.user_id == user_id, Notification.is_read == 0)
@@ -582,18 +681,28 @@ class RecordService:
             return count
 
     async def create_notification(
-        self, user_id: int, n_type: str, title: str, content: Optional[str] = None
-    ) -> int:
-        """创建站内提醒"""
+        self,
+        user_id: int,
+        n_type: str,
+        title: str,
+        content: Optional[str] = None,
+        dedupe_key: Optional[str] = None,
+    ) -> Optional[int]:
+        """创建站内提醒；传入 dedupe_key 时重复请求安全返回。"""
         async with AsyncSessionLocal() as session:
             n = Notification(
                 user_id=user_id,
                 type=n_type,
                 title=title,
                 content=content,
+                dedupe_key=dedupe_key,
             )
             session.add(n)
-            await session.commit()
+            try:
+                await session.commit()
+            except IntegrityError:
+                await session.rollback()
+                return None
             await session.refresh(n)
             return n.id
 
@@ -608,7 +717,7 @@ class RecordService:
                     """
                     SELECT COUNT(*) FROM mistake m
                     INNER JOIN review_plan rp ON rp.mistake_id = m.id
-                    WHERE m.user_id = :uid AND rp.review_date = :today AND rp.is_completed = 0
+                    WHERE m.user_id = :uid AND rp.review_date <= :today AND rp.status = 'pending'
                     """
                 )
                 result = await session.execute(sql, {"uid": user_id, "today": today})
@@ -618,9 +727,10 @@ class RecordService:
                         user_id, "review_due",
                         f"今日有 {count} 道错题需要复习",
                         "打开学习首页查看复习计划",
+                        dedupe_key=f"review_due:{today.isoformat()}",
                     )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Generate review reminder failed for user=%s: %s", user_id, exc)
 
         # 检查每日计划是否完成
         try:
@@ -632,9 +742,44 @@ class RecordService:
                         user_id, "daily_plan",
                         f"今日还剩 {remaining} 组练习未完成",
                         "继续完成每日学习目标",
+                        dedupe_key=f"daily_plan:{today.isoformat()}",
                     )
-        except Exception:
-            pass
+                elif any(
+                    task["task_type"] == "correction" and task["status"] != "completed"
+                    for task in plan.get("tasks", [])
+                ):
+                    await self.create_notification(
+                        user_id,
+                        "daily_plan",
+                        "今日还有错题订正或复习任务未完成",
+                        "完成错题任务后才算完成今日学习计划",
+                        dedupe_key=f"daily_plan:{today.isoformat()}",
+                    )
+        except Exception as exc:
+            logger.warning("Generate daily-plan reminder failed for user=%s: %s", user_id, exc)
+
+        # 到期前 3 天开始提醒，每天最多生成一条。
+        try:
+            async with AsyncSessionLocal() as session:
+                vip = (
+                    await session.execute(
+                        select(VipInfo).where(VipInfo.user_id == user_id).limit(1)
+                    )
+                ).scalar_one_or_none()
+                if vip and vip.expires_at:
+                    expires_at = vip.expires_at
+                    expires_date = expires_at.date()
+                    days_left = (expires_date - today).days
+                    if 0 <= days_left <= 3:
+                        await self.create_notification(
+                            user_id,
+                            "vip_expiring",
+                            f"会员将在 {days_left} 天后到期" if days_left else "会员将在今天到期",
+                            f"会员有效期至 {expires_date.isoformat()}，续费后可继续使用会员权益",
+                            dedupe_key=f"vip_expiring:{today.isoformat()}",
+                        )
+        except Exception as exc:
+            logger.warning("Generate VIP reminder failed for user=%s: %s", user_id, exc)
 
 
 # 全局单例

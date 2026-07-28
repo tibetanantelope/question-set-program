@@ -21,13 +21,28 @@ async function parseJsonResponse(response) {
     try {
       payload = JSON.parse(text)
     } catch {
-      payload = { detail: text }
+      // Do not render an upstream HTML/plain-text traceback in the application UI.
+      payload = null
     }
   }
 
   if (!response.ok) {
-    const message = payload?.message || payload?.detail || payload?.msg || `请求失败：${response.status}`
-    throw new Error(message)
+    if (response.status === 401) {
+      setToken('')
+    }
+    const fallbackMessages = {
+      500: '服务器内部错误，请稍后重试',
+      502: '后端服务暂时不可用，请稍后重试',
+      503: '数据库或依赖服务暂时不可用，请稍后重试',
+      504: '后端服务响应超时，请稍后重试'
+    }
+    const message = payload?.message || payload?.detail || payload?.msg
+      || fallbackMessages[response.status] || `请求失败：${response.status}`
+    const error = new Error(message)
+    error.code = payload?.code || `HTTP_${response.status}`
+    error.status = response.status
+    error.data = payload?.data
+    throw error
   }
 
   return payload

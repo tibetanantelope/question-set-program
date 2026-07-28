@@ -1,6 +1,6 @@
 """成员二：智能诊断、练习生成、答题相关数据模型"""
 
-from sqlalchemy import Integer, Column, String, DateTime, Text, Boolean, Float
+from sqlalchemy import Integer, Column, String, DateTime, Text, Boolean, Float, JSON
 from sqlalchemy.sql import func
 from backend.model import Base
 
@@ -44,6 +44,7 @@ class Practice(Base):
     diagnosis_id = Column(Integer, nullable=True, comment='关联诊断ID')
     knowledge_point_id = Column(Integer, nullable=True, comment='知识点ID')
     knowledge_point_name = Column(String(128), nullable=True, comment='知识点名称')
+    subject = Column(String(32), nullable=True, index=True, comment='生成练习时的学科快照')
     difficulty = Column(String(32), nullable=False, default='easy', comment='easy/medium/hard')
     status = Column(String(32), nullable=False, default='in_progress', comment='in_progress/completed')
     question_count = Column(Integer, nullable=False, default=3, comment='题目数量')
@@ -51,6 +52,7 @@ class Practice(Base):
     accuracy = Column(Float, default=0.0, comment='正确率')
     is_valid = Column(Boolean, default=False, comment='是否为有效练习（成功生成且提交）')
     request_id = Column(String(128), nullable=True, unique=True, comment='幂等标识')
+    answer_request_id = Column(String(64), nullable=True, unique=True, comment='提交答案幂等标识')
     created_at = Column(DateTime, default=func.current_timestamp(), comment='创建时间')
     submitted_at = Column(DateTime, default=None, comment='提交时间')
 
@@ -68,6 +70,8 @@ class Question(Base):
     knowledge_point_id = Column(Integer, nullable=True, comment='知识点ID')
     knowledge_point_name = Column(String(128), nullable=True, comment='知识点名称')
     standard_answer = Column(Text, nullable=True, comment='标准答案')
+    answer_type = Column(String(32), nullable=False, default='short_text', comment='numeric/symbolic/set/proof/code/short_text')
+    grading_spec = Column(JSON, nullable=True, comment='结构化评分标准')
     analysis = Column(Text, nullable=True, comment='基础解析')
     user_answer = Column(Text, nullable=True, comment='学生答案')
     is_correct = Column(Boolean, default=None, comment='判断结果')
