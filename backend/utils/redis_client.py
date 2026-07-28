@@ -23,6 +23,10 @@ def get_redis_client() -> Redis:
             REDIS_URL,
             encoding="utf-8",
             decode_responses=True,
+            socket_connect_timeout=float(os.getenv("REDIS_CONNECT_TIMEOUT_SECONDS", "1")),
+            socket_timeout=float(os.getenv("REDIS_SOCKET_TIMEOUT_SECONDS", "1")),
+            retry_on_timeout=False,
+            health_check_interval=30,
         )
     return _redis_client
 

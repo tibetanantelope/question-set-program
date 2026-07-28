@@ -70,6 +70,20 @@ class VectorStoreManager(metaclass=singleMeta):
             logger.error("Error deleting document: %s", e, exc_info=True)
             return False
 
+    async def delete_user_documents(self, user_id: int) -> bool:
+        """Delete only semantic memories owned by one user."""
+        try:
+            collection = self.vector_store._collection
+            loop = asyncio.get_event_loop()
+            await loop.run_in_executor(
+                None,
+                partial(collection.delete, where={"user_id": user_id}),
+            )
+            return True
+        except Exception as e:
+            logger.error("Error deleting user documents: %s", e, exc_info=True)
+            return False
+
     async def update_document(self, doc_id: str, text: str, metadata: dict = None) -> bool:
         """Update a document in the vector store."""
         if not await self.delete_document(doc_id):

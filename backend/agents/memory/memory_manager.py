@@ -102,8 +102,20 @@ class MemoryManager(metaclass=singleMeta):
         except Exception:
             logger.exception("保存当前短期记忆失败")
 
-
-    #TODO 完成记忆模块的clear功能
+    async def clear(
+        self,
+        user_id: int,
+        session_id: int,
+        *,
+        include_long_term: bool = False,
+    ) -> dict[str, bool]:
+        """Clear a session, optionally including profile and semantic memories."""
+        await self.short_term_memory.clear_all(user_id, session_id)
+        result = {"short_term": True, "long_term": False, "vector": False}
+        if include_long_term:
+            result["long_term"] = await self.long_term_memory.delete(user_id)
+            result["vector"] = await self.vector_memory.delete_user_documents(user_id)
+        return result
 
 
 def format_memory_context(memory_data: dict[str, Any]) -> str:

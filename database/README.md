@@ -29,3 +29,14 @@ mysql -h <host> -u <user> -p <database> < database/001_initial.sql
 ```
 
 `Base.metadata.create_all()`继续负责首次创建 ORM 中不存在的表；SQL升级文件负责已经存在表的字段变更及后续业务表创建。
+
+## 联调前只读预检
+
+在项目根目录运行：
+
+```bash
+python -m backend.preflight
+python -m backend.preflight --check-db
+```
+
+第二条命令只查询数据库连接和 `schema_version`，不会执行或修改迁移。

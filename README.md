@@ -60,6 +60,24 @@ npm run dev
 
 浏览器访问 <http://127.0.0.1:5173>。
 
+前端页面已使用真实路由，可直接刷新 `/learn`、`/profile`、`/mistakes`、
+`/records`、`/reports`、`/points`、`/vip` 和 `/settings`。
+
+前端质量检查：
+
+```powershell
+cd frontend
+npm run lint
+npm test
+npx playwright install chromium  # 首次运行端到端测试时执行
+npm run test:e2e
+npm run build
+```
+
+支付宝沙箱异步通知地址为 `POST /vip/alipay/notify`。本地联调时可只依赖主动
+查询；需要验证异步通知时，应将 `ALIPAY_NOTIFY_URL` 配置为支付宝服务器可访问的
+公网 HTTPS 地址，例如 `https://example.com/vip/alipay/notify`。
+
 ## 运行测试
 
 在项目根目录执行：
@@ -70,6 +88,9 @@ backend\.venv\Scripts\python.exe -m pytest backend\tests -q -p no:cacheprovider
 ```
 
 每个业务任务应同时提交对应测试，至少覆盖成功、参数错误和越权三种情况。
+
+仓库中的 `.github/workflows/ci.yml` 会在推送和拉取请求时执行后端测试、前端
+lint、单元测试、生产构建和 Playwright 登录页检查。
 
 ## 数据库升级
 

@@ -31,9 +31,19 @@ agent_router = APIRouter(prefix="/agent", tags=["agent"])
 user_profile_mapper = UserProfileMapper(AsyncSessionLocal)
 short_term_memory = ShortTermMemory(max_memory_size=10)
 long_term_memory = LongTermMemory(user_profile_mapper, short_term_memory)
-vector_store_manager = VectorStoreManager()
-memory_manager = MemoryManager(long_term_memory, short_term_memory, vector_store_manager)
+memory_manager = None
 agent_app = get_app()
+
+
+def get_memory_manager() -> MemoryManager:
+    """按需初始化 Chroma，避免导入 FastAPI 应用时立即写向量数据库。"""
+    global memory_manager
+    if memory_manager is None:
+        vector_store_manager = VectorStoreManager()
+        memory_manager = MemoryManager(
+            long_term_memory, short_term_memory, vector_store_manager
+        )
+    return memory_manager
 
 
 async def build_agent_state(
@@ -42,7 +52,7 @@ async def build_agent_state(
     text: str,
 ) -> GraphState:
     """Build the same memory-aware state for normal and streaming requests."""
-    memory_data = await memory_manager.get_memory_for_planner(
+    memory_data = await get_memory_manager().get_memory_for_planner(
         user_id, session_id, query_text=text
     )
     memory_context = format_memory_context(memory_data)
@@ -79,7 +89,7 @@ async def analyse(request: TextRequest, token: str = None, user: User = Depends(
 
         # 写入记忆：保存原始用户文本（不含历史上下文），避免记忆污染
         memory_unit = MemoryUnit(text, result.get('final_result', ''))
-        await memory_manager.add_memory(user_id, session_id, memory_unit)
+        await get_memory_manager().add_memory(user_id, session_id, memory_unit)
 
         return {
             'code': 200,
@@ -143,7 +153,7 @@ async def _stream_generator(text: str, user_id: int, session_id: int):
     # 流结束后写入记忆
     if final_result:
         memory_unit = MemoryUnit(text, final_result)
-        await memory_manager.add_memory(user_id, session_id, memory_unit)
+        await get_memory_manager().add_memory(user_id, session_id, memory_unit)
 
     yield "data: [DONE]\n\n"
 

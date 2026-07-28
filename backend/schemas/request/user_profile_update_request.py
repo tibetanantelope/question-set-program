@@ -1,17 +1,28 @@
-from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class UserProfileUpdateRequest(BaseModel):
-    """部分更新用户画像的请求模型，除 user_id 外所有字段均可选。"""
-    model_config = {"from_attributes": True}
+    """保存或更新当前用户画像的请求模型。所有字段均为可选。"""
 
-    user_id: int = Field(..., description='用户ID', json_schema_extra={'example': 1}, gt=0)
+    stage: Optional[str] = Field(None, description='学段', json_schema_extra={'example': 'junior'})
     grade: Optional[str] = Field(None, description='年级', json_schema_extra={'example': '七年级'})
-    subject: Optional[str] = Field(None, description='主修学科', json_schema_extra={'example': '数学'})
-    weak_points: Optional[dict] = Field(None, description='薄弱知识点', json_schema_extra={'example': {'数学': '导数'}})
-    preferences: Optional[dict] = Field(None, description='长期偏好', json_schema_extra={'example': {'学习方式': '视频'}})
-    update_time: Optional[datetime] = Field(None, description='更新时间')
-    create_time: Optional[datetime] = Field(None, description='创建时间')
+    subject: Optional[str] = Field(None, description='学科或课程', json_schema_extra={'example': '数学'})
+    learning_goal: Optional[str] = Field(None, description='学习目标', json_schema_extra={'example': 'weakness'})
+    weekly_study_days: Optional[int] = Field(None, description='每周学习天数: 1-7', json_schema_extra={'example': 5}, ge=1, le=7)
+    daily_target_groups: Optional[int] = Field(None, description='每日目标练习组数: 1-5', json_schema_extra={'example': 3}, ge=1, le=5)
+
+    @field_validator('stage')
+    @classmethod
+    def validate_stage(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ('primary', 'junior', 'senior', 'university'):
+            raise ValueError('学段必须为 primary/junior/senior/university')
+        return v
+
+    @field_validator('learning_goal')
+    @classmethod
+    def validate_learning_goal(cls, v: Optional[str]) -> Optional[str]:
+        if v is not None and v not in ('daily', 'weakness', 'exam'):
+            raise ValueError('学习目标必须为 daily/weakness/exam')
+        return v
