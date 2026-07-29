@@ -128,6 +128,12 @@
               <section v-if="diagnosisResult.concept_explanation.pitfalls?.length"><h4>容易混淆</h4><ul><li v-for="item in diagnosisResult.concept_explanation.pitfalls" :key="item">{{ item }}</li></ul></section>
               <section v-if="diagnosisResult.concept_explanation.example" class="concept-example"><h4>举个例子</h4><p><strong>{{ diagnosisResult.concept_explanation.example.question }}</strong></p><p>{{ diagnosisResult.concept_explanation.example.answer }}</p><ol v-if="diagnosisResult.concept_explanation.example.steps?.length"><li v-for="step in diagnosisResult.concept_explanation.example.steps" :key="step">{{ step }}</li></ol></section>
             </div>
+            <div v-if="learningInputType==='question' && diagnosisResult.original_solution" class="concept-teaching original-solution">
+              <section class="concept-lead"><small>这道题考查</small><p>{{ diagnosisResult.original_solution.summary || diagnosisResult.knowledge_point_name }}</p></section>
+              <section v-if="diagnosisResult.original_solution.answer"><h4>答案</h4><p class="original-answer">{{ diagnosisResult.original_solution.answer }}</p></section>
+              <section v-if="diagnosisResult.original_solution.steps?.length"><h4>解题步骤</h4><ol><li v-for="step in diagnosisResult.original_solution.steps" :key="step">{{ step }}</li></ol></section>
+              <section v-if="diagnosisResult.original_solution.pitfalls?.length"><h4>易错提醒</h4><ul><li v-for="item in diagnosisResult.original_solution.pitfalls" :key="item">{{ item }}</li></ul></section>
+            </div>
             <div class="diagnosis-grid"><div><small>{{ diagnosisResult.mastery_evidence==='historical'?'当前掌握度':'掌握度' }}</small><strong>{{ diagnosisResult.mastery_evidence==='historical'?diagnosisResult.mastery_score+'%':'待评估' }}</strong><p class="evidence-note">{{ diagnosisResult.mastery_evidence_text }}</p></div><div><small>{{ currentLearningTab.focusLabel }}</small><p>{{ diagnosisResult.weakness||'需要通过练习进一步确认' }}</p></div><div><small>下一步</small><p>{{ diagnosisResult.practice_suggestion||'完成一组针对性练习' }}</p></div></div>
             <div v-if="learningInputType==='learning_question'" class="concept-next"><p>概念看明白后，可以用一组相关检测题确认是否真正理解。</p><button class="primary-btn" :disabled="practiceLoading" @click="generatePractice()">{{ practiceLoading?'正在生成检测题…':'我已理解，生成概念检测 →' }}</button></div>
             <button v-else class="primary-btn" :disabled="practiceLoading" @click="generatePractice()">{{ practiceLoading?'正在生成题目…':currentLearningTab.generateLabel }}</button>
@@ -412,7 +418,7 @@ const vipStatus=reactive({is_vip:false,started_at:null,expires_at:null}), vipUsa
 const paymentState=reactive({status:'',orderNo:'',message:''}), paymentQuerying=ref('')
 const learningInputTabs=[
   {value:'weakness',label:'专项补弱',title:'描述你反复出错的地方',description:'定位错误机制，随后生成由易到难的专项变式。',placeholder:'例如：我做一元一次方程时，经常在去括号和移项处出错……',actionLabel:'分析薄弱点 ✦',loadingLabel:'正在分析薄弱点…',resultTitle:'薄弱点诊断',focusLabel:'定位结果',generateLabel:'生成专项训练 →',prompts:['移项时为什么总变错号？','我总在去括号时出错','分数方程通分容易错']},
-  {value:'question',label:'原题攻克',title:'粘贴一道不会做或做错的题',description:'识别原题考点与解题入口，再生成同类迁移题。',placeholder:'请粘贴完整题目；如果有自己的答案或卡住的步骤，也可以一起写上。',actionLabel:'分析这道题 ✦',loadingLabel:'正在分析原题…',resultTitle:'原题考点分析',focusLabel:'解题卡点',generateLabel:'生成同类变式 →',prompts:['这道题第一步应该怎么想？','我的解法错在哪里？','给我出几道同类变式']},
+  {value:'question',label:'原题攻克',title:'粘贴一道不会做或做错的题',description:'先识别考点并解出原题，再生成几道同类题巩固。',placeholder:'请粘贴完整题目；如果有自己的答案或卡住的步骤，也可以一起写上。',actionLabel:'解析原题 ✦',loadingLabel:'正在解析原题…',resultTitle:'原题解析',focusLabel:'解题重点',generateLabel:'生成同类题 →',prompts:['这道题第一步应该怎么想？','我的解法错在哪里？','给我出几道同类变式']},
   {value:'learning_question',label:'概念答疑',title:'提出一个想真正弄懂的概念',description:'梳理定义、适用条件和易混点，再用检测题确认理解。',placeholder:'例如：现在完成时和一般过去时到底有什么区别？',actionLabel:'讲清这个概念 ✦',loadingLabel:'正在梳理概念…',resultTitle:'概念理解诊断',focusLabel:'理解难点',generateLabel:'生成概念检测 →',prompts:['为什么移项要变号？','现在完成时什么时候用？','相似和全等有什么区别？']},
 ]
 const learningInputType=ref('weakness'), diagnosisLoading=ref(false), practiceLoading=ref(false), answerLoading=ref(false), exchangeLoading=ref(false), recommendationLoading=ref(false)

@@ -45,11 +45,22 @@ const hasUnclassified = ref(false)
 const subjectOptions = computed(() => props.profile?.stage === 'university'
   ? responseSubjects.value
   : [...new Set([...subjectsForStage(props.profile?.stage), ...responseSubjects.value])])
-const masteries = computed(() => allMasteries.value.filter(item => {
-  if (!subjectFilter.value) return true
-  if (subjectFilter.value === '__unclassified__') return !item.subject
-  return item.subject === subjectFilter.value
-}))
+const masteries = computed(() => {
+  const filtered = allMasteries.value.filter(item => {
+    if (!subjectFilter.value) return true
+    if (subjectFilter.value === '__unclassified__') return !item.subject
+    return item.subject === subjectFilter.value
+  })
+  const unique = new Map()
+  for (const item of filtered) {
+    const key = `${item.subject || '__unclassified__'}::${item.knowledge_point_name}`
+    const previous = unique.get(key)
+    if (!previous || (item.answer_count || 0) > (previous.answer_count || 0)) {
+      unique.set(key, item)
+    }
+  }
+  return [...unique.values()]
+})
 const total = ref(0)
 const filter = ref('')
 const trendDays = 7

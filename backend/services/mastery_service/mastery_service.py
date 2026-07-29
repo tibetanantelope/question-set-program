@@ -207,7 +207,7 @@ class MasteryService:
             )
         subject_map = (
             await self.mapper.get_mastery_subjects(
-                user_id, [item.knowledge_point_name for item in subject_source]
+                user_id, subject_source
             )
             if hasattr(self.mapper, "get_mastery_subjects")
             else {}
@@ -222,7 +222,7 @@ class MasteryService:
                 answer_count=m.answer_count or 0,
                 correct_count=m.correct_count or 0,
                 last_studied_at=m.last_studied_at.isoformat() if m.last_studied_at else None,
-                subject=subject_map.get(m.knowledge_point_name),
+                subject=subject_map.get(m.knowledge_point_id),
                 evaluation_confidence=(
                     'low' if (m.answer_count or 0) < 3
                     else 'medium' if (m.answer_count or 0) < 8
@@ -249,7 +249,7 @@ class MasteryService:
             pages=pages,
             subjects=sorted(set(subject_map.values())),
             has_unclassified=any(
-                item.knowledge_point_name not in subject_map for item in subject_source
+                item.knowledge_point_id not in subject_map for item in subject_source
             ),
         )
 

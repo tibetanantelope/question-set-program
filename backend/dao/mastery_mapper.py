@@ -206,51 +206,59 @@ class MasteryMapper:
             return [(row.d, int(row.avg_score)) for row in result.all()]
 
     async def get_mastery_subjects(
-        self, user_id: int, knowledge_point_names: List[str]
-    ) -> dict[str, str]:
+        self, user_id: int, masteries: List[KnowledgeMastery]
+    ) -> dict[int, str]:
         """按最近答题或错题快照推断知识点所属学科/大学课程。"""
-        if not knowledge_point_names:
+        if not masteries:
             return {}
         async with self.session_factory() as session:
-            mapping: dict[str, str] = {}
+            ids = [item.knowledge_point_id for item in masteries]
+            mapping: dict[int, str] = {}
             rows = (
                 await session.execute(
                     select(
-                        AnswerRecord.knowledge_point_name,
+                        AnswerRecord.knowledge_point_id,
                         AnswerRecord.subject,
                         AnswerRecord.created_at,
                     )
                     .where(
                         AnswerRecord.user_id == user_id,
-                        AnswerRecord.knowledge_point_name.in_(knowledge_point_names),
+                        AnswerRecord.knowledge_point_id.in_(ids),
                         AnswerRecord.subject.is_not(None),
                         AnswerRecord.subject != '',
                     )
                     .order_by(AnswerRecord.created_at.desc())
                 )
             ).all()
-            for name, subject, _ in rows:
-                if name and subject and name not in mapping:
-                    mapping[name] = subject
+            for knowledge_point_id, subject, _ in rows:
+                if knowledge_point_id and subject and knowledge_point_id not in mapping:
+                    mapping[knowledge_point_id] = subject
 
-            missing = [name for name in knowledge_point_names if name not in mapping]
+            missing = [item.knowledge_point_id for item in masteries if item.knowledge_point_id not in mapping]
             if missing:
                 rows = (
                     await session.execute(
-                        select(Mistake.knowledge_point_name, Mistake.subject, Mistake.created_at)
+                        select(Mistake.knowledge_point_id, Mistake.subject, Mistake.created_at)
                         .where(
                             Mistake.user_id == user_id,
-                            Mistake.knowledge_point_name.in_(missing),
+                            Mistake.knowledge_point_id.in_(missing),
                             Mistake.subject.is_not(None),
                             Mistake.subject != '',
                         )
                         .order_by(Mistake.created_at.desc())
                     )
                 ).all()
-                for name, subject, _ in rows:
-                    if name and subject and name not in mapping:
-                        mapping[name] = subject
-            missing = [name for name in knowledge_point_names if name not in mapping]
+                for knowledge_point_id, subject, _ in rows:
+                    if knowledge_point_id and subject and knowledge_point_id not in mapping:
+                        mapping[knowledge_point_id] = subject
+            missing_items = [item for item in masteries if item.knowledge_point_id not in mapping]
+            unique_names = {
+                item.knowledge_point_name for item in missing_items
+                if item.knowledge_point_name
+                and sum(other.knowledge_point_name == item.knowledge_point_name for other in masteries) == 1
+            }
+            if not unique_names:
+                return mapping
             if missing:
                 rows = (
                     await session.execute(
@@ -261,16 +269,20 @@ class MasteryMapper:
                         )
                         .where(
                             LearningRecord.user_id == user_id,
-                            LearningRecord.knowledge_point_name.in_(missing),
+                            LearningRecord.knowledge_point_name.in_(unique_names),
                             LearningRecord.subject.is_not(None),
                             LearningRecord.subject != '',
                         )
                         .order_by(LearningRecord.occurred_at.desc())
                     )
                 ).all()
+                by_name = {}
                 for name, subject, _ in rows:
-                    if name and subject and name not in mapping:
-                        mapping[name] = subject
+                    if name and subject and name not in by_name:
+                        by_name[name] = subject
+                for item in missing_items:
+                    if item.knowledge_point_name in by_name:
+                        mapping[item.knowledge_point_id] = by_name[item.knowledge_point_name]
             return mapping
 
     # ========== 错题 ==========

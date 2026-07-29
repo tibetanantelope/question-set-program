@@ -28,6 +28,10 @@ class DiagnosisResponse(BaseModel):
         None,
         description='概念答疑专用讲解：摘要、关键要点、核心结构、易混点和示例',
     )
+    original_solution: Optional[dict[str, Any]] = Field(
+        None,
+        description='原题攻克专用解析：考点、答案、解题步骤和易错提醒',
+    )
 
 
 # ==================== 练习生成 8.2 / 查询 8.3 ====================

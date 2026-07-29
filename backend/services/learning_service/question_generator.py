@@ -266,14 +266,75 @@ async def generate_questions_via_llm(
     return parse_llm_questions(text)
 
 
+async def analyze_original_question_via_llm(
+    content: str,
+    knowledge_point_name: str,
+    subject: str,
+    stage: str,
+    grade: str,
+) -> Optional[dict]:
+    """解析用户粘贴的原题，返回可直接展示的答案和步骤。"""
+    if not llm_available():
+        return None
+    prompt = (
+        f'你是{stage}{grade}{subject}老师。请解析下面这道原题，已识别考点为“{knowledge_point_name}”。\n'
+        f'原题：{content[:1800]}\n'
+        '只输出 JSON，不要 Markdown，字段必须为：'
+        '{"summary":"考点与解题思路","answer":"最终答案",'
+        '"steps":["按顺序列出关键步骤"],"pitfalls":["易错提醒"]}。'
+        '答案必须针对这道具体题目，不能只讲概念；如果题目信息不足，请明确说明缺少什么。'
+    )
+    try:
+        llm = _build_diverse_llm()
+        if llm is None:
+            from backend.agents.agent.get_llm import get_llm
+            llm = get_llm()
+        response = await llm.ainvoke(prompt)
+        raw = getattr(response, 'content', None) or str(response)
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not match:
+            return None
+        data = json.loads(match.group(0))
+        steps = data.get('steps') if isinstance(data.get('steps'), list) else []
+        pitfalls = data.get('pitfalls') if isinstance(data.get('pitfalls'), list) else []
+        return {
+            'summary': str(data.get('summary') or '').strip(),
+            'answer': str(data.get('answer') or '').strip(),
+            'steps': [str(item).strip() for item in steps if str(item).strip()],
+            'pitfalls': [str(item).strip() for item in pitfalls if str(item).strip()],
+        }
+    except Exception:
+        return None
+
+
+# Keep the classifier as a separate public helper.  This definition is placed
+# after the original-question analyzer so both flows have independent prompts.
 async def identify_knowledge_point_via_llm(
     content: str,
     subject: str,
     stage: str,
     grade: str,
 ) -> Optional[str]:
-    """Classify an explicit learning question into one concrete curriculum point."""
     if not llm_available():
+        return None
+    prompt = (
+        f'You are a curriculum classifier. Stage: {stage}; grade: {grade}; subject: {subject}.\n'
+        f'Student input: {content[:500]}\n'
+        'Return JSON only: {"knowledge_point_name":"one concrete textbook knowledge point, or empty string"}.'
+    )
+    try:
+        llm = _build_diverse_llm()
+        if llm is None:
+            from backend.agents.agent.get_llm import get_llm
+            llm = get_llm()
+        response = await llm.ainvoke(prompt)
+        raw = getattr(response, 'content', None) or str(response)
+        match = re.search(r'\{.*\}', raw, re.DOTALL)
+        if not match:
+            return None
+        name = str(json.loads(match.group(0)).get('knowledge_point_name') or '').strip()
+        return name[:128] if name and name not in {'综合知识点', '其他', '未知知识点'} else None
+    except Exception:
         return None
     prompt = (
         f'你是课程知识点分类器。学段：{stage}；年级：{grade}；学科：{subject}。'

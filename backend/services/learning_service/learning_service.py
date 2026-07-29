@@ -231,6 +231,7 @@ class LearningService:
             )
         suggestion = self._practice_suggestion(learning_status, kp_name)
         concept_explanation = None
+        original_solution = None
         if req.input_type == 'learning_question':
             # 概念答疑必须先交付真实讲解，再由用户决定是否生成检测题。
             # 复用知识点复习的通用内容生成与相关性校验能力，适用于所有学科。
@@ -247,6 +248,13 @@ class LearningService:
                 'pitfalls': concept_card.get('pitfalls', []),
                 'example': concept_card.get('example'),
             }
+        elif req.input_type == 'question':
+            from backend.services.learning_service.question_generator import (
+                analyze_original_question_via_llm,
+            )
+            original_solution = await analyze_original_question_via_llm(
+                content, kp_name, profile.subject, profile.stage, profile.grade
+            )
 
         diagnosis = Diagnosis(
             user_id=user_id,
@@ -273,6 +281,7 @@ class LearningService:
             weakness=weakness,
             practice_suggestion=suggestion,
             concept_explanation=concept_explanation,
+            original_solution=original_solution,
         )
 
     # ==================================================================

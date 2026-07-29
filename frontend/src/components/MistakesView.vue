@@ -88,7 +88,7 @@
             <p><b>标准答案：</b>{{ reveals[item.review_id].standard_answer || '暂无标准答案' }}</p>
             <p><b>解析：</b>{{ reveals[item.review_id].analysis }}</p>
             <small v-if="reveals[item.review_id].next_review_date">
-              第 {{ reveals[item.review_id].current_round }}/{{ reveals[item.review_id].total_rounds }} 轮完成，下次复习：{{ reveals[item.review_id].next_review_date }}
+              下次复习：{{ reveals[item.review_id].next_review_date }}
             </small>
             <small v-else>三轮复习已完成；该知识点仍未掌握，建议返回智能学习进行专项巩固。</small>
           </div>
