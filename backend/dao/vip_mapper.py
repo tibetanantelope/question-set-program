@@ -75,5 +75,21 @@ class VipMapper:
             0,
         )
 
+    async def count_extra_practice_exchanges(
+        self,
+        db: AsyncSession,
+        user_id: int,
+        usage_date: date,
+    ) -> int:
+        """统计当天兑换的额外练习次数，用于展示扩展后的今日额度。"""
+        result = await db.execute(
+            select(func.count(PointTransaction.id)).where(
+                PointTransaction.user_id == user_id,
+                PointTransaction.business_type == "exchange_extra_practice",
+                func.date(PointTransaction.created_at) == usage_date,
+            )
+        )
+        return int(result.scalar_one())
+
     def add_usage(self, db: AsyncSession, usage: UsageRecord) -> None:
         db.add(usage)

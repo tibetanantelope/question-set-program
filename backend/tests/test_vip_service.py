@@ -36,6 +36,9 @@ class StubVipMapper:
     ):
         return self.counts.get((feature, usage_source), self.counts.get(feature, 0))
 
+    async def count_extra_practice_exchanges(self, _db, _user_id, _usage_date):
+        return self.counts.get("extra_practice_exchanges", 0)
+
     def add_usage(self, _db, usage):
         self.added.append(usage)
 
@@ -85,6 +88,24 @@ async def test_active_vip_has_twenty_practice_limit():
     assert result["membership"] == "vip"
     assert result["practice_generation"] == {"used": 19, "limit": 20, "remaining": 1}
     assert result["stage_report"]["limit"] is None
+
+
+@pytest.mark.asyncio
+async def test_point_exchange_extends_daily_practice_limit():
+    now = datetime(2026, 7, 22, 12, 0)
+    info = SimpleNamespace(started_at=now, expires_at=now + timedelta(days=30))
+    mapper = StubVipMapper(
+        vip_info=info,
+        counts={
+            ("practice_generation", "quota"): 4,
+            ("practice_generation", "points"): 1,
+            "extra_practice_exchanges": 1,
+        },
+    )
+
+    result = await VipService(mapper).get_usage(make_db(), user_id=7, now=now)
+
+    assert result["practice_generation"] == {"used": 5, "limit": 21, "remaining": 16}
 
 
 @pytest.mark.asyncio

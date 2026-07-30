@@ -175,7 +175,21 @@ class VipService:
             "practice_generation",
             usage_source="quota",
         )
-        practice_limit = PRACTICE_LIMITS[membership]
+        points_used = await self.mapper.count_usage(
+            db,
+            user_id,
+            local_now.date(),
+            "practice_generation",
+            usage_source="points",
+        )
+        count_exchanges = getattr(self.mapper, "count_extra_practice_exchanges", None)
+        exchanged_count = (
+            await count_exchanges(db, user_id, local_now.date())
+            if count_exchanges is not None
+            else points_used
+        )
+        practice_limit = PRACTICE_LIMITS[membership] + exchanged_count
+        practice_used += points_used
 
         result = {
             "date": local_now.date(),

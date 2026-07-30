@@ -241,6 +241,17 @@ def _parse_generated_card(raw: str, name: str, mode: str) -> dict:
             token for token in topic_tokens if token in serialized
         ]
         topic_hits = sum(serialized.count(token) for token in matched_topics)
+        # 中文复合知识点经常没有可用的分隔词，例如“作对现在的影响”。
+        # 此时要求完整名称出现两次会误伤正常回答，补充连续双字主题词作为
+        # 相关性信号；仍要求多个不同主题词命中，避免泛化内容误通过。
+        han_parts = re.findall(r"[\u4e00-\u9fff]{2,}", name)
+        ngram_topics = {
+            part[index:index + 2]
+            for part in han_parts
+            for index in range(len(part) - 1)
+        }
+        matched_ngrams = [token for token in ngram_topics if token in serialized]
+        ngram_hits = sum(serialized.count(token) for token in matched_ngrams)
         required_topics = min(2, len(set(topic_tokens)))
         is_relevant = (
             exact_hits >= 2
@@ -248,6 +259,10 @@ def _parse_generated_card(raw: str, name: str, mode: str) -> dict:
                 required_topics > 0
                 and len(set(matched_topics)) >= required_topics
                 and topic_hits >= 3
+            )
+            or (
+                len(matched_ngrams) >= 2
+                and ngram_hits >= 3
             )
         )
     if not is_relevant:
@@ -350,17 +365,19 @@ async def _card_for_mode_with_ai(
     try:
         return await _generate_dynamic_card(name, subject, mode)
     except Exception as exc:
-        logger.exception(
-            "dynamic knowledge card generation failed: subject=%s, name=%s, mode=%s",
+        # 复习卡是可降级的读取接口。LLM 超时、返回非法 JSON 或相关性校验
+        # 失败都不应阻断复习页；先记录原因，再返回本地卡片让用户至少可以继续
+        # 复习和提交自测。下次请求仍会重新尝试生成动态内容。
+        logger.warning(
+            "dynamic knowledge card generation failed; using fallback: "
+            "subject=%s, name=%s, mode=%s, error=%s",
             subject,
             name,
             mode,
+            exc,
+            exc_info=True,
         )
-        raise BusinessError(
-            "KNOWLEDGE_REVIEW_GENERATION_FAILED",
-            f"「{name}」的专业复习内容生成失败，请稍后重试",
-            503,
-        ) from exc
+        return _card_for_mode(name, mode)
 
 
 class KnowledgeReviewService:
