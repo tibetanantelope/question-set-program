@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>智学伴 - 管理员</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: "PingFang SC", "Microsoft YaHei", system-ui, sans-serif; background: #f5f7fa; color: #333; }
+
+    .admin-login { display: flex; align-items: center; justify-content: center; min-height: 100vh; background: linear-gradient(135deg, #667eea, #764ba2); }
+    .login-box { background: #fff; border-radius: 16px; padding: 40px; width: 400px; box-shadow: 0 20px 60px rgba(0,0,0,0.15); }
+    .login-box h1 { text-align: center; margin-bottom: 8px; font-size: 24px; }
+    .login-box .subtitle { text-align: center; color: #999; margin-bottom: 24px; font-size: 14px; }
+    .login-box label { display: block; margin-bottom: 12px; font-size: 14px; color: #666; }
+    .login-box input { width: 100%; padding: 10px 12px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-top: 4px; }
+    .login-box button { width: 100%; padding: 12px; background: #1a73e8; color: #fff; border: none; border-radius: 8px; font-size: 16px; cursor: pointer; margin-top: 20px; }
+    .login-box button:disabled { opacity: 0.6; cursor: default; }
+    .login-error { color: #c62828; font-size: 13px; margin-top: 8px; text-align: center; }
+
+    #app { max-width: 1200px; margin: 0 auto; padding: 20px; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; padding-bottom: 16px; border-bottom: 2px solid #e5e5e5; margin-bottom: 20px; }
+    .topbar h1 { font-size: 22px; }
+    .topbar .right { display: flex; align-items: center; gap: 12px; }
+    .logout-btn { padding: 6px 16px; border: 1px solid #ccc; border-radius: 6px; background: #fff; cursor: pointer; }
+
+    .tabs { display: flex; gap: 8px; margin-bottom: 20px; }
+    .tabs button { padding: 8px 24px; border: 1px solid #ddd; border-radius: 8px; background: #f5f5f5; cursor: pointer; font-size: 14px; }
+    .tabs button.active { background: #1a73e8; color: #fff; border-color: #1a73e8; }
+
+    .toolbar { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
+    .toolbar input, .toolbar select { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+    .toolbar input { flex: 1; min-width: 200px; }
+    .toolbar button { padding: 8px 16px; background: #1a73e8; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+
+    table { width: 100%; border-collapse: collapse; background: #fff; border-radius: 12px; overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+    th, td { padding: 10px 14px; border-bottom: 1px solid #f0f0f0; text-align: left; font-size: 14px; }
+    th { background: #fafafa; font-weight: 600; color: #555; }
+    tr.disabled { opacity: 0.5; }
+    .tag { padding: 2px 8px; border-radius: 4px; font-size: 12px; background: #e8e8e8; }
+    .tag.admin { background: #e3f2fd; color: #1565c0; }
+    .tag.active { background: #e8f5e9; color: #2e7d32; }
+    .tag.disabled { background: #ffebee; color: #c62828; }
+    .loading { text-align: center; padding: 40px; color: #999; }
+
+    .actions { display: flex; gap: 6px; }
+    .actions button { padding: 4px 10px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 13px; }
+    .btn-warn { color: #c62828; border-color: #c62828 !important; }
+    .btn-ok { color: #2e7d32; border-color: #2e7d32 !important; }
+
+    .pagination { display: flex; justify-content: center; align-items: center; gap: 12px; margin-top: 16px; }
+    .pagination button { padding: 6px 14px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; }
+    .pagination button:disabled { opacity: 0.4; cursor: default; }
+
+    .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); display: flex; align-items: center; justify-content: center; z-index: 1000; }
+    .modal { background: #fff; border-radius: 12px; padding: 24px; min-width: 420px; max-width: 600px; }
+    .modal h3 { margin-bottom: 16px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 16px; }
+    .detail-grid label { font-size: 12px; color: #999; display: block; }
+    .detail-grid span { font-weight: 500; }
+    .modal .close-btn { padding: 8px 20px; background: #1a73e8; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <script type="module">
+    import { createApp, ref, onMounted } from 'https://unpkg.com/vue@3/dist/vue.esm-browser.js'
+
+    const API = 'http://127.0.0.1:8000'
+    const TOKEN_KEY = 'admin_token'
+
+    const app = createApp({
+      setup() {
+        const authed = ref(false)
+        const loading = ref(false)
+        const error = ref('')
+        const loginForm = ref({ username: 'admin01', password: 'admin123456' })
+        const tab = ref('users')
+
+        // User management
+        const users = ref([])
+        const usersLoading = ref(false)
+        const page = ref(1)
+        const totalPages = ref(1)
+        const keyword = ref('')
+        const filterStatus = ref('')
+        const filterRole = ref('')
+        const detailUser = ref(null)
+
+        // Audits
+        const audits = ref([])
+        const auditsLoading = ref(false)
+
+        async function api(path, opts = {}) {
+          const headers = { 'Content-Type': 'application/json' }
+          const token = localStorage.getItem(TOKEN_KEY)
+          if (token) headers['Authorization'] = 'Bearer ' + token
+          const resp = await fetch(API + path, { headers, ...opts, body: opts.body ? JSON.stringify(opts.body) : undefined })
+          const data = await resp.json()
+          if (!resp.ok) throw new Error(data.message || data.detail || 'Error')
+          return data
+        }
+
+        async function login() {
+          loading.value = true; error.value = ''
+          try {
+            const resp = await api('/login/login', { method: 'POST', body: { username: loginForm.value.username, password: loginForm.value.password } })
+            if (resp.user?.role !== 'admin') { error.value = '非管理员账号'; return }
+            localStorage.setItem(TOKEN_KEY, resp.access_token)
+            authed.value = true
+            loadUsers()
+          } catch (e) { error.value = e.message } finally { loading.value = false }
+        }
+
+        function logout() {
+          localStorage.removeItem(TOKEN_KEY)
+          authed.value = false
+        }
+
+        async function loadUsers() {
+          usersLoading.value = true
+          const params = new URLSearchParams({ page: page.value, page_size: 20 })
+          if (keyword.value) params.set('keyword', keyword.value)
+          if (filterStatus.value) params.set('status', filterStatus.value)
+          if (filterRole.value) params.set('role', filterRole.value)
+          try {
+            const resp = await api('/admin/users?' + params)
+            users.value = resp.data.items
+            totalPages.value = resp.data.pages
+          } catch (e) { console.error(e) } finally { usersLoading.value = false }
+        }
+
+        function searchUsers() { page.value = 1; loadUsers() }
+
+        async function toggleStatus(u) {
+          try {
+            if (u.status === 'active') { await api('/admin/users/' + u.id + '/disable', { method: 'POST' }); u.status = 'disabled' }
+            else { await api('/admin/users/' + u.id + '/restore', { method: 'POST' }); u.status = 'active' }
+          } catch (e) { alert(e.message) }
+        }
+
+        async function viewUser(u) {
+          try {
+            const resp = await api('/admin/users/' + u.id)
+            detailUser.value = { ...u, ...resp.data, ...(resp.data?.profile || {}) }
+          } catch (e) { alert(e.message) }
+        }
+
+        async function loadAudits() {
+          auditsLoading.value = true
+          try {
+            const resp = await api('/admin/audits?page=1&page_size=50')
+            audits.value = resp.data.items
+          } catch (e) { console.error(e) } finally { auditsLoading.value = false }
+        }
+
+        function switchTab(t) { tab.value = t; if (t === 'audits') loadAudits() }
+        function actionLabel(a) {
+          const m = { login: '登录', disable_user: '禁用用户', restore_user: '恢复用户' }
+          return m[a] || a
+        }
+        function fmtTime(t) { return t ? new Date(t).toLocaleString('zh-CN') : '-' }
+
+        onMounted(() => {
+          const t = localStorage.getItem(TOKEN_KEY)
+          if (t) { authed.value = true; loadUsers() }
+        })
+
+        return { authed, loading, error, loginForm, login, logout, tab, switchTab,
+          users, usersLoading, keyword, filterStatus, filterRole, page, totalPages,
+          searchUsers, loadUsers, toggleStatus, viewUser, detailUser,
+          audits, auditsLoading, loadAudits, actionLabel, fmtTime }
+      },
+      template: `
+        <div v-if="!authed" class="admin-login">
+          <form class="login-box" @submit.prevent="login">
+            <h1>智学伴 管理员</h1>
+            <p class="subtitle">仅限管理员登录</p>
+            <label>用户名<input v-model="loginForm.username" autocomplete="username"></label>
+            <label>密码<input v-model="loginForm.password" type="password" autocomplete="current-password"></label>
+            <button :disabled="loading">{{ loading ? '登录中…' : '登录' }}</button>
+            <p v-if="error" class="login-error">{{ error }}</p>
+            <p style="margin-top:12px;font-size:12px;color:#999;text-align:center">演示: admin01 / admin123456</p>
+          </form>
+        </div>
+
+        <div v-else id="app">
+          <div class="topbar">
+            <h1>智学伴 · 管理员控制台</h1>
+            <div class="right"><span>admin01</span><button class="logout-btn" @click="logout">退出登录</button></div>
+          </div>
+
+          <div class="tabs">
+            <button :class="{ active: tab === 'users' }" @click="switchTab('users')">用户管理</button>
+            <button :class="{ active: tab === 'audits' }" @click="switchTab('audits')">操作日志</button>
+          </div>
+
+          <div v-if="tab === 'users'">
+            <div class="toolbar">
+              <input v-model="keyword" placeholder="搜索用户名或ID…" @keyup.enter="searchUsers">
+              <select v-model="filterStatus"><option value="">全部状态</option><option value="active">正常</option><option value="disabled">已禁用</option></select>
+              <select v-model="filterRole"><option value="">全部角色</option><option value="user">普通用户</option><option value="admin">管理员</option></select>
+              <button @click="searchUsers">搜索</button>
+            </div>
+            <table>
+              <thead><tr><th>ID</th><th>用户名</th><th>角色</th><th>状态</th><th>年级</th><th>学科</th><th>诊断</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr v-if="usersLoading"><td colspan="8" class="loading">加载中…</td></tr>
+                <tr v-else-if="users.length===0"><td colspan="8" class="loading">暂无数据</td></tr>
+                <tr v-for="u in users" :key="u.id" :class="{ disabled: u.status==='disabled' }">
+                  <td>{{ u.id }}</td><td><strong>{{ u.username }}</strong></td>
+                  <td><span :class="'tag ' + (u.role==='admin'?'admin':'')">{{ u.role==='admin'?'管理员':'用户' }}</span></td>
+                  <td><span :class="'tag ' + (u.status==='active'?'active':'disabled')">{{ u.status==='active'?'正常':'已禁用' }}</span></td>
+                  <td>{{ u.grade||'-' }}</td><td>{{ u.subject||'-' }}</td><td>{{ u.diagnostic_status||'-' }}</td>
+                  <td class="actions">
+                    <button @click="viewUser(u)">详情</button>
+                    <button v-if="u.role!=='admin'" :class="u.status==='active'?'btn-warn':'btn-ok'" @click="toggleStatus(u)">{{ u.status==='active'?'禁用':'恢复' }}</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            <div class="pagination" v-if="totalPages > 1">
+              <button :disabled="page<=1" @click="page--;loadUsers()">上一页</button>
+              <span>{{ page }} / {{ totalPages }}</span>
+              <button :disabled="page>=totalPages" @click="page++;loadUsers()">下一页</button>
+            </div>
+          </div>
+
+          <div v-if="tab === 'audits'">
+            <table>
+              <thead><tr><th>ID</th><th>管理员</th><th>操作</th><th>对象</th><th>时间</th></tr></thead>
+              <tbody>
+                <tr v-if="auditsLoading"><td colspan="5" class="loading">加载中…</td></tr>
+                <tr v-else-if="audits.length===0"><td colspan="5" class="loading">暂无日志</td></tr>
+                <tr v-for="a in audits" :key="a.id">
+                  <td>{{ a.id }}</td><td>{{ a.admin_username }}</td>
+                  <td><span class="tag">{{ actionLabel(a.action) }}</span></td>
+                  <td>{{ a.target_type }}#{{ a.target_id }}</td>
+                  <td>{{ fmtTime(a.created_at) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div v-if="detailUser" class="modal-overlay" @click.self="detailUser=null">
+            <div class="modal">
+              <h3>用户详情 #{{ detailUser.id }}</h3>
+              <div class="detail-grid">
+                <div><label>用户名</label><span>{{ detailUser.username }}</span></div>
+                <div><label>角色</label><span>{{ detailUser.role }}</span></div>
+                <div><label>状态</label><span>{{ detailUser.status }}</span></div>
+                <div><label>学段</label><span>{{ detailUser.stage || '-' }}</span></div>
+                <div><label>年级</label><span>{{ detailUser.grade || '-' }}</span></div>
+                <div><label>学科</label><span>{{ detailUser.subject || '-' }}</span></div>
+                <div><label>学习目标</label><span>{{ detailUser.learning_goal || '-' }}</span></div>
+                <div><label>诊断状态</label><span>{{ detailUser.diagnostic_status || '-' }}</span></div>
+              </div>
+              <button class="close-btn" @click="detailUser=null">关闭</button>
+            </div>
+          </div>
+        </div>`
+    })
+
+    app.mount('#app')
+  </script>
+</body>
+</html>
