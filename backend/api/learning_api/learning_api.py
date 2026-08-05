@@ -128,6 +128,20 @@ async def submit_answers(
                 standard_answer=result.standard_answer,
                 answered_at=datetime.now(_TZ).isoformat(),
             ))
+        # 更新题目使用统计：题库题反查原题，非题库题更新当前行
+        try:
+            from backend.dao.question_bank_mapper import get_question_bank_mapper
+            qb_mapper = await get_question_bank_mapper()
+            for result in data.results:
+                question = questions.get(result.question_id)
+                # 练习落库时记录了来源题库题，则统计反查到题库原题
+                target_id = getattr(question, 'source_question_id', None) if question else None
+                if target_id is None:
+                    target_id = result.question_id
+                await qb_mapper.update_question_stats(target_id, result.is_correct)
+        except Exception:
+            logger.exception("题目使用统计更新失败 practice_id=%s", practice_id)
+
     except Exception:
         logger.exception("练习已提交，但掌握度/错题处理失败 practice_id=%s", practice_id)
         sync_failures.append("mastery")

@@ -71,7 +71,7 @@ async def get_db() -> AsyncSessionLocal:
 from backend.model.user import User  # noqa: E402, F401
 from backend.model.user_profile import UserProfile  # noqa: E402, F401
 from backend.model.diagnostic import DiagnosticSession, DiagnosticAnswer  # noqa: E402, F401
-from backend.model.learning import LearningSession, Diagnosis, Practice, Question  # noqa: E402, F401
+from backend.model.learning import LearningSession, Diagnosis, Practice, Question, KnowledgePoint  # noqa: E402, F401
 from backend.model.mastery import (  # noqa: E402, F401
     AnswerRecord, KnowledgeMastery, Mistake, ReviewPlan, KnowledgeReviewRecord,
 )

@@ -124,6 +124,19 @@ class AdminService:
             await db.commit()
             return {"id": u.id, "username": u.username, "status": u.status}
 
+    async def record_audit(
+        self, admin: User, action: str, target_type: str, target_id: int, ip: str | None = None,
+    ) -> None:
+        """通用审计记录方法，供各管理员 API 调用。"""
+        import json
+        async with AsyncSessionLocal() as db:
+            db.add(AdminAudit(
+                admin_id=admin.id, admin_username=admin.username,
+                action=action, target_type=target_type, target_id=target_id,
+                detail=json.dumps({}), ip_address=ip,
+            ))
+            await db.commit()
+
     # ── 审计日志 ──────────────────────────────────────
 
     async def list_audits(

@@ -59,6 +59,51 @@
     .detail-grid label { font-size: 12px; color: #999; display: block; }
     .detail-grid span { font-weight: 500; }
     .modal .close-btn { padding: 8px 20px; background: #1a73e8; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+
+    /* ── 题目管理表格专用布局 ── */
+    .qtable-wrap { overflow-x: auto; }
+    .qtable { table-layout: fixed; width: 100%; min-width: 1020px; }
+    .qtable th, .qtable td {
+      padding: 0 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      vertical-align: middle;
+    }
+    .qtable th { height: 44px; }
+    .qtable td { height: 48px; }
+    /* 操作列按钮不能被裁切 */
+    .qtable td.q-actions { overflow: visible; }
+    /* 列宽分配（百分比） */
+    .qtable th:nth-child(1), .qtable td:nth-child(1) { width: 28%; }  /* 题目 */
+    .qtable th:nth-child(2), .qtable td:nth-child(2) { width: 12%; }  /* 知识点 */
+    .qtable th:nth-child(3), .qtable td:nth-child(3) { width: 7%; }   /* 学科 */
+    .qtable th:nth-child(4), .qtable td:nth-child(4) { width: 7%; }   /* 难度 */
+    .qtable th:nth-child(5), .qtable td:nth-child(5) { width: 9%; }   /* 使用/正确率 */
+    .qtable th:nth-child(6), .qtable td:nth-child(6) { width: 7%; }   /* 审核 */
+    .qtable th:nth-child(7), .qtable td:nth-child(7) { width: 7%; }   /* 上架 */
+    .qtable th:nth-child(8), .qtable td:nth-child(8) { width: 23%; }  /* 操作 */
+    .qtable td strong, .qtable td small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .qtable td small { margin-top: 3px; }
+    .qtable .q-actions {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: nowrap;
+      justify-content: flex-start;
+    }
+    .qtable .q-actions button {
+      flex: 0 0 auto;
+      padding: 3px 6px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      background: #fff;
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 1.2;
+      white-space: nowrap;
+    }
+    .qtable .q-actions button:hover { background: #f5f5f5; }
   </style>
 </head>
 <body>
@@ -86,6 +131,12 @@
         const keyword = ref('')
         const filterStatus = ref('')
         const filterRole = ref('')
+        // Question management
+        const questions = ref([]); const questionsLoading = ref(false)
+        const qPage = ref(1); const qTotalPages = ref(1); const qTotal = ref(0)
+        const qKeyword = ref(''); const qSubject = ref(''); const qDifficulty = ref(''); const qReviewStatus = ref('')
+        const editingQuestion = ref(null); const questionForm = ref({})
+        const subjects = ref(['数学','语文','英语','物理','化学','生物','政治','历史','地理','计算机']); const knowledgePoints = ref([])
         const detailUser = ref(null)
 
         // Audits
@@ -147,6 +198,69 @@
           } catch (e) { alert(e.message) }
         }
 
+        async function loadQuestions() {
+          questionsLoading.value = true
+          const params = new URLSearchParams({ page: qPage.value, page_size: 20 })
+          if (qKeyword.value) params.set('keyword', qKeyword.value)
+          if (qSubject.value) params.set('subject', qSubject.value)
+          if (qDifficulty.value) params.set('difficulty', qDifficulty.value)
+          if (qReviewStatus.value) params.set('review_status', qReviewStatus.value)
+          try {
+            const resp = await api('/admin/questions?' + params)
+            questions.value = resp.data.items; qTotalPages.value = resp.data.pages; qTotal.value = resp.data.total
+          } catch (e) { console.error(e) } finally { questionsLoading.value = false }
+        }
+        async function loadSubjects() {
+          try { const resp = await api('/admin/subjects'); subjects.value = resp.data || []; if (!subjects.value.length) subjects.value = ['数学','语文','英语','物理','化学','生物','政治','历史','地理','计算机'] } catch (e) { subjects.value = ['数学','语文','英语','物理','化学','生物','政治','历史','地理','计算机'] }
+        }
+        async function loadKnowledgePoints() {
+          try { const resp = await api('/admin/knowledge-points?page_size=100'); knowledgePoints.value = resp.data.items } catch (e) {}
+        }
+        function openCreateForm() {
+          editingQuestion.value = { _new: true }
+          questionForm.value = { content: '', question_type: 'short_answer', difficulty: 'easy', subject: '', knowledge_point_name: '', standard_answer: '', analysis: '', answer_type: 'short_text', options: null }
+        }
+        async function editQuestion(q) {
+          try {
+            const resp = await api('/admin/questions/' + q.question_id)
+            const d = resp.data
+            editingQuestion.value = { _new: false, question_id: q.question_id }
+            questionForm.value = { content: d.content, question_type: d.question_type, difficulty: d.difficulty, subject: d.subject || '', knowledge_point_name: d.knowledge_point_name || '', standard_answer: d.standard_answer || '', analysis: d.analysis || '', answer_type: d.answer_type, options: d.options }
+          } catch (e) { alert(e.message) }
+        }
+        async function saveQuestion() {
+          const payload = { ...questionForm.value }
+          try {
+            if (editingQuestion.value._new) {
+              await api('/admin/questions', { method: 'POST', body: payload })
+              alert('题目已创建')
+            } else {
+              await api('/admin/questions/' + editingQuestion.value.question_id, { method: 'PUT', body: payload })
+              alert('题目已更新')
+            }
+            editingQuestion.value = null; loadQuestions()
+          } catch (e) { alert(e.message) }
+        }
+        async function deleteQuestion(q) {
+          if (!confirm('确定删除这道题目吗？')) return
+          try { await api('/admin/questions/' + q.question_id, { method: 'DELETE' }); loadQuestions() } catch (e) { alert(e.message) }
+        }
+        async function approveQuestion(q) {
+          try { await api('/admin/questions/' + q.question_id + '/approve', { method: 'POST' }); loadQuestions() } catch (e) { alert(e.message) }
+        }
+        async function rejectQuestion(q) {
+          try { await api('/admin/questions/' + q.question_id + '/reject', { method: 'POST' }); loadQuestions() } catch (e) { alert(e.message) }
+        }
+        async function publishQuestion(q) {
+          try { await api('/admin/questions/' + q.question_id + '/publish', { method: 'POST' }); loadQuestions() } catch (e) { alert(e.message) }
+        }
+        async function offShelfQuestion(q) {
+          try { await api('/admin/questions/' + q.question_id + '/off-shelf', { method: 'POST' }); loadQuestions() } catch (e) { alert(e.message) }
+        }
+        function diffLabel(d) { return d==='easy'?'简单':d==='medium'?'中等':d==='hard'?'困难':d||'--' }
+        function reviewStatusLabel(s) { return s==='published'?'已上架':s==='off_shelf'?'已下架':s||'--' }
+        function statusLabel(s) { return s==='approved'?'已审核':s==='pending'?'待审核':s==='rejected'?'已驳回':s==='draft'?'草稿':s||'--' }
+
         async function loadAudits() {
           auditsLoading.value = true
           try {
@@ -155,7 +269,7 @@
           } catch (e) { console.error(e) } finally { auditsLoading.value = false }
         }
 
-        function switchTab(t) { tab.value = t; if (t === 'audits') loadAudits() }
+        function switchTab(t) { tab.value = t; if (t === 'audits') loadAudits(); if (t === 'questions') { loadQuestions(); loadSubjects(); loadKnowledgePoints() } }
         function actionLabel(a) {
           const m = { login: '登录', disable_user: '禁用用户', restore_user: '恢复用户' }
           return m[a] || a
@@ -170,7 +284,14 @@
         return { authed, loading, error, loginForm, login, logout, tab, switchTab,
           users, usersLoading, keyword, filterStatus, filterRole, page, totalPages,
           searchUsers, loadUsers, toggleStatus, viewUser, detailUser,
-          audits, auditsLoading, loadAudits, actionLabel, fmtTime }
+          audits, auditsLoading, loadAudits, actionLabel, fmtTime,
+          questions, questionsLoading, qPage, qTotalPages, qTotal,
+          qKeyword, qSubject, qDifficulty, qReviewStatus,
+          subjects, knowledgePoints,
+          loadQuestions, loadSubjects, loadKnowledgePoints,
+          editingQuestion, questionForm, openCreateForm, editQuestion, saveQuestion,
+          deleteQuestion, approveQuestion, rejectQuestion, publishQuestion, offShelfQuestion,
+          diffLabel, reviewStatusLabel, statusLabel }
       },
       template: `
         <div v-if="!authed" class="admin-login">
@@ -193,6 +314,7 @@
 
           <div class="tabs">
             <button :class="{ active: tab === 'users' }" @click="switchTab('users')">用户管理</button>
+            <button :class="{ active: tab === 'questions' }" @click="switchTab('questions')">题目管理</button>
             <button :class="{ active: tab === 'audits' }" @click="switchTab('audits')">操作日志</button>
           </div>
 
@@ -227,6 +349,48 @@
             </div>
           </div>
 
+          <div v-if="tab === 'questions'">
+            <div class="toolbar">
+              <input v-model="qKeyword" placeholder="搜索题目内容…" @keyup.enter="qPage=1;loadQuestions()">
+              <select v-model="qSubject" @change="qPage=1;loadQuestions()"><option value="">全部学科</option><option v-for="s in subjects" :key="s" :value="s">{{ s }}</option></select>
+              <select v-model="qDifficulty" @change="qPage=1;loadQuestions()"><option value="">全部难度</option><option value="easy">简单</option><option value="medium">中等</option><option value="hard">困难</option></select>
+              <select v-model="qReviewStatus" @change="qPage=1;loadQuestions()"><option value="">全部状态</option><option value="published">已上架</option><option value="off_shelf">已下架</option></select>
+              <button @click="qPage=1;loadQuestions()">搜索</button>
+              <button @click="openCreateForm()" style="background:#2e7d32;margin-left:auto">+ 新增题目</button>
+            </div>
+            <div class="qtable-wrap">
+            <table class="qtable">
+              <thead><tr><th>题目</th><th>知识点</th><th>学科</th><th>难度</th><th>使用/正确率</th><th>审核</th><th>上架</th><th>操作</th></tr></thead>
+              <tbody>
+                <tr v-if="questionsLoading"><td colspan="8" class="loading">加载中…</td></tr>
+                <tr v-else-if="questions.length===0"><td colspan="8" class="loading">{{ qKeyword || qSubject ? '无匹配题目' : '暂无题目，点击右上角新增' }}</td></tr>
+                <tr v-for="q in questions" :key="q.question_id">
+                  <td :title="q.content"><strong :title="q.content">{{ q.content }}</strong><small>{{ q.question_type === 'choice' ? '选择题' : '解答题' }} · ID{{ q.question_id }}</small></td>
+                  <td :title="q.knowledge_point_name">{{ q.knowledge_point_name || '--' }}</td>
+                  <td>{{ q.subject || '--' }}</td>
+                  <td><span :class="'tag ' + (q.difficulty==='easy'?'blue':q.difficulty==='medium'?'orange':'red')">{{ diffLabel(q.difficulty) }}</span></td>
+                  <td>{{ q.usage_count }} 次 / {{ q.correct_rate }}%</td>
+                  <td><span :class="'tag ' + (q.status==='approved'?'green':q.status==='pending'?'orange':'red')">{{ statusLabel(q.status) }}</span></td>
+                  <td><span :class="'tag ' + (q.review_status==='published'?'green':'')">{{ reviewStatusLabel(q.review_status) }}</span></td>
+                  <td class="q-actions">
+                    <button @click="editQuestion(q)">编辑</button>
+                    <button v-if="q.status!=='approved'" @click="approveQuestion(q)" class="btn-ok">通过</button>
+                    <button v-if="q.status==='pending'" @click="rejectQuestion(q)" class="btn-warn">驳回</button>
+                    <button v-if="q.review_status==='published'" @click="offShelfQuestion(q)" class="btn-warn">下架</button>
+                    <button v-else @click="publishQuestion(q)" class="btn-ok">上架</button>
+                    <button v-if="q.usage_count===0" @click="deleteQuestion(q)" class="btn-warn">删除</button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+            </div>
+            <div class="pagination" v-if="qTotalPages > 1">
+              <button :disabled="qPage<=1" @click="qPage--;loadQuestions()">上一页</button>
+              <span>{{ qPage }} / {{ qTotalPages }} · 共 {{ qTotal }} 道题</span>
+              <button :disabled="qPage>=qTotalPages" @click="qPage++;loadQuestions()">下一页</button>
+            </div>
+          </div>
+
           <div v-if="tab === 'audits'">
             <table>
               <thead><tr><th>ID</th><th>管理员</th><th>操作</th><th>对象</th><th>时间</th></tr></thead>
@@ -257,6 +421,25 @@
                 <div><label>诊断状态</label><span>{{ detailUser.diagnostic_status || '-' }}</span></div>
               </div>
               <button class="close-btn" @click="detailUser=null">关闭</button>
+            </div>
+          </div>
+
+          <div v-if="editingQuestion" class="modal-overlay" @click.self="editingQuestion=null">
+            <div class="modal" style="max-width:650px">
+              <h3>{{ editingQuestion._new ? '新增题目' : '编辑题目' }}</h3>
+              <div class="form-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
+                <div><label style="font-size:12px;color:#999">题型</label><select v-model="questionForm.question_type" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px"><option value="short_answer">解答题</option><option value="choice">选择题</option><option value="fill_blank">填空题</option><option value="true_false">判断题</option></select></div>
+                <div><label style="font-size:12px;color:#999">难度</label><select v-model="questionForm.difficulty" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px"><option value="easy">简单</option><option value="medium">中等</option><option value="hard">困难</option></select></div>
+                <div><label style="font-size:12px;color:#999">学科</label><select v-model="questionForm.subject" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px"><option value="">选择学科</option><option v-for="s in subjects" :key="s" :value="s">{{ s }}</option></select></div>
+                <div><label style="font-size:12px;color:#999">知识点</label><input v-model="questionForm.knowledge_point_name" placeholder="如：一元一次方程" style="width:100%;padding:6px;border:1px solid #ddd;border-radius:4px"></div>
+              </div>
+              <div style="margin-bottom:12px"><label style="font-size:12px;color:#999">题目内容</label><textarea v-model="questionForm.content" placeholder="输入题目内容…" style="width:100%;height:80px;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px"></textarea></div>
+              <div style="margin-bottom:12px"><label style="font-size:12px;color:#999">标准答案</label><input v-model="questionForm.standard_answer" placeholder="输入答案" style="width:100%;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px"></div>
+              <div style="margin-bottom:12px"><label style="font-size:12px;color:#999">解析</label><textarea v-model="questionForm.analysis" placeholder="输入解析…" style="width:100%;height:60px;padding:8px;border:1px solid #ddd;border-radius:4px;font-size:14px"></textarea></div>
+              <div style="display:flex;gap:8px;justify-content:flex-end">
+                <button @click="editingQuestion=null" style="padding:8px 20px;border:1px solid #ddd;border-radius:6px;background:#fff;cursor:pointer">取消</button>
+                <button @click="saveQuestion()" class="close-btn">保存</button>
+              </div>
             </div>
           </div>
         </div>`

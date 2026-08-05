@@ -18,6 +18,7 @@ from backend.api.points_api.points_api import points_router
 from backend.api.vip_api.vip_api import vip_router
 from backend.api.admin_api.admin_user_api import admin_user_router
 from backend.api.admin_api.admin_audit_api import admin_audit_router
+from backend.api.admin_api.admin_question_api import admin_question_router
 from backend.core.hooks import startup_event, shutdown_event
 from backend.middleware.exception import register_exception_handlers
 
@@ -63,6 +64,7 @@ app.include_router(points_router)
 app.include_router(vip_router)
 app.include_router(admin_user_router)
 app.include_router(admin_audit_router)
+app.include_router(admin_question_router)
 
 if __name__ == "__main__":
     import uvicorn

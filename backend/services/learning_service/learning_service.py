@@ -365,6 +365,7 @@ class LearningService:
                 answer_type=q.get('answer_type') or 'short_text',
                 grading_spec=q.get('grading_spec') or {},
                 analysis=q['analysis'],
+                source_question_id=q.get('source_question_id'),
             )
             for i, q in enumerate(raw)
         ]
@@ -720,6 +721,27 @@ class LearningService:
                 res = await res
             return res
 
+        # 1. 优先从数据库已上架题库选题（命中多少用多少，不因凑不满而整体放弃）
+        bank_questions = await self._fetch_from_db_bank(kp_name, difficulty, count, subject)
+        remaining = count - len(bank_questions)
+        if remaining <= 0:
+            return bank_questions
+
+        # 2. 剩余部分由 LLM / 预置字典 / 离线兜底补足
+        fill = await self._generate_fill(
+            kp_name, difficulty, remaining, subject, user_desc, stage, grade,
+        )
+        if not fill:
+            # 补足失败时至少返回已命中的题库题
+            return bank_questions
+        return bank_questions + fill
+
+    async def _generate_fill(
+        self, kp_name: str, difficulty: str, count: int,
+        subject: Optional[str] = None, user_desc: Optional[str] = None,
+        stage: Optional[str] = None, grade: Optional[str] = None,
+    ) -> List[dict]:
+        """补足出题：LLM → 预置字典 → 离线兜底。"""
         from backend.services.learning_service.question_generator import (
             generate_questions_via_llm,
             llm_available,
@@ -753,6 +775,37 @@ class LearningService:
         if subject and subject != '数学':
             return []
         return self._fallback_questions(difficulty, count, kp_name)
+
+    async def _fetch_from_db_bank(
+        self, kp_name: str, difficulty: str, count: int, subject: Optional[str] = None,
+    ) -> Optional[List[dict]]:
+        """从数据库已上架题库中选题（优先级高于 LLM 和预置字典）。"""
+        try:
+            from backend.dao.question_bank_mapper import get_question_bank_mapper
+            mapper = await get_question_bank_mapper()
+            questions = await mapper.fetch_published_questions(
+                knowledge_point_name=kp_name,
+                subject=subject,
+                difficulty=difficulty,
+                limit=count,
+            )
+            return [
+                {
+                    'content': q.content,
+                    'knowledge_point_name': q.knowledge_point_name or kp_name,
+                    'knowledge_point_id': q.knowledge_point_id,
+                    'ans': q.standard_answer or '',
+                    'analysis': q.analysis or '',
+                    'difficulty': q.difficulty or difficulty,
+                    'subject': q.subject,
+                    'question_type': q.question_type or 'short_answer',
+                    'source_question_id': q.id,
+                }
+                for q in questions
+            ]
+        except Exception:
+            logger.warning("DB question bank query failed, falling back", exc_info=True)
+        return []
 
     def _match_bank(self, kp_name: str) -> Optional[dict]:
         for key, bank in _PRACTICE_BANK.items():
