@@ -369,6 +369,9 @@
           <article class="panel"><div class="panel-head"><div><h3>订单记录</h3><p>最近的会员订单与支付状态</p></div></div><p v-if="!vipOrders.length">暂无会员订单</p><div v-for="order in vipOrders" :key="order.order_no" class="knowledge-row"><div><strong>{{ order.order_no }}</strong><small>{{ order.created_at ? new Date(order.created_at).toLocaleString() : '' }}</small></div><b>¥ {{ order.amount }}</b><span>{{ {pending:'待支付',paying:'支付中',paid:'已支付',closed:'已关闭',refunded:'已退款'}[order.status] || order.status }}</span><button v-if="['pending','paying'].includes(order.status)" :disabled="paymentQuerying===order.order_no" @click="refreshPaymentOrder(order.order_no)">{{ paymentQuerying===order.order_no?'查询中…':'查询结果' }}</button></div></article>
         </section>
 
+        <!-- 管理员：学习管理 -->
+        <AdminLearningView v-else-if="currentView === 'admin-learning'" />
+
         <!-- 设置 -->
         <SettingsView v-else @saved="handleProfileSaved" @logout="clearSession" />
       </div>
@@ -393,9 +396,10 @@ const SettingsView = defineAsyncComponent(() => import('./components/SettingsVie
 const ProfileView = defineAsyncComponent(() => import('./components/ProfileView.vue'))
 const MistakesView = defineAsyncComponent(() => import('./components/MistakesView.vue'))
 const KnowledgeReviewView = defineAsyncComponent(() => import('./components/KnowledgeReviewView.vue'))
+const AdminLearningView = defineAsyncComponent(() => import('./components/AdminLearningView.vue'))
 
 const route=useRoute(), router=useRouter()
-const routeViews=new Set(['home','learn','profile','mistakes','knowledge-review','records','reports','points','vip','settings'])
+const routeViews=new Set(['home','learn','profile','mistakes','knowledge-review','records','reports','points','vip','settings','admin-learning'])
 const initialView=route.name==='payment-result'?'vip':routeViews.has(String(route.name))?String(route.name):'home'
 const authMode=ref('login'), authLoading=ref(false), analysisLoading=ref(false), vipPayLoading=ref(false), token=ref(''), currentView=ref(initialView), mobileMenu=ref(false), messages=ref([])
 const authForm=reactive({username:'',password:'',confirmPassword:''})

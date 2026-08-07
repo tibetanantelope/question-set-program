@@ -17,7 +17,7 @@ async def _ensure_admin_account():
         result = await conn.execute(
             select(User).where(User.role == 'admin')
         )
-        admin = result.scalar_one_or_none()
+        admin = result.scalars().first()
         if admin is None:
             hashed = get_password_hash(DEMO_ADMIN_PASSWORD)
             await conn.execute(
