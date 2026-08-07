@@ -35,6 +35,8 @@
     </section>
   </div>
 
+  <AdminDashboard v-else-if="isAdmin" @logout="clearSession" />
+
   <div v-else class="app-layout">
     <aside class="sidebar" :class="{ open: mobileMenu }">
       <div class="side-brand"><span class="brand-mark">智</span><div><strong>智学伴</strong><small>AI 个性化学习助手</small></div></div>
@@ -111,6 +113,36 @@
           <div v-if="!todayPlan.tasks || todayPlan.tasks.length === 0" class="task"><span>1</span><div><strong>完成一组推荐练习</strong><small>开始学习即可获得积分奖励</small></div><em>+5</em></div>
           <button class="soft-btn full" @click="go(todayPlan.tasks?.some(task => task.task_type === 'correction' && task.status !== 'completed') ? 'mistakes' : 'learn')">{{ todayPlan.completed ? '今日目标已完成 ✓' : '继续完成今日计划' }}</button></article>
           </div>
+          <article v-if="learningSummary" class="panel learning-summary">
+            <div class="panel-head"><div><h3>学情概览</h3><p>总体掌握度与知识点分布，随练习和订正持续更新</p></div><button class="soft-btn" @click="go('profile')">查看完整画像 →</button></div>
+            <div class="summary-body">
+              <div class="summary-score">
+                <div class="score-ring" :class="summaryScoreClass" :style="{ '--p': learningSummary.overall_score + '%' }"><span><strong>{{ learningSummary.overall_score }}</strong><small>总体掌握度</small></span></div>
+                <p>{{ summaryScoreText }}</p>
+                <small>{{ learningSummary.studied_count }} / {{ learningSummary.total_knowledge_points }} 个知识点已作答</small>
+              </div>
+              <div class="summary-dist">
+                <div v-for="d in learningSummary.distribution" :key="d.status" class="dist-line">
+                  <span class="dist-name"><i :class="'dot-' + d.status"></i>{{ d.label }}</span>
+                  <div class="dist-track"><i :class="'bar-' + d.status" :style="{ width: summaryDistPercent(d.count) + '%' }"></i></div>
+                  <b>{{ d.count }}</b>
+                </div>
+                <div class="summary-todos">
+                  <button :class="{ warn: learningSummary.due_reviews > 0 }" @click="go('mistakes')">今日复习 <strong>{{ learningSummary.due_reviews }}</strong></button>
+                  <button :class="{ warn: learningSummary.pending_corrections > 0 }" @click="go('mistakes')">待订正 <strong>{{ learningSummary.pending_corrections }}</strong></button>
+                </div>
+              </div>
+              <div class="summary-weak">
+                <h4>优先攻克</h4>
+                <div v-if="!learningSummary.weakest.length" class="weak-empty">暂无明显薄弱点，继续保持 ✓</div>
+                <button v-for="w in learningSummary.weakest" :key="w.knowledge_point_name" class="weak-row" @click="startRecommendation({ type: 'practice', knowledge_point_name: w.knowledge_point_name })">
+                  <span class="weak-name">{{ w.knowledge_point_name }}</span>
+                  <span class="weak-score" :class="'text-' + w.learning_status">{{ w.mastery_score }}%</span>
+                  <em>去练习 →</em>
+                </button>
+              </div>
+            </div>
+          </article>
         </section>
 
         <!-- 智能学习 -->
@@ -385,7 +417,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { getToken, login, register, setToken } from './api'
 import { clearSessionMemory, getMyProfile } from './api/profile'
-import { getMasteries, getMistakes, getTodayReviews } from './api/mastery'
+import { getMasteries, getMistakes, getTodayReviews, getLearningSummary } from './api/mastery'
 import { createPractice, diagnose, newRequestId, submitAnswers, unlockDetailedAnalysis } from './api/learning'
 import { getRecords as fetchRecordsApi, getRecordsStats, getHomeRecommendations, getTodayPlan, getNotifications, getUnreadCount, markNotificationRead, markAllNotificationsRead } from './api/records'
 import { subjectsForStage } from './constants/education'
@@ -397,6 +429,7 @@ const ProfileView = defineAsyncComponent(() => import('./components/ProfileView.
 const MistakesView = defineAsyncComponent(() => import('./components/MistakesView.vue'))
 const KnowledgeReviewView = defineAsyncComponent(() => import('./components/KnowledgeReviewView.vue'))
 const AdminLearningView = defineAsyncComponent(() => import('./components/AdminLearningView.vue'))
+const AdminDashboard = defineAsyncComponent(() => import('./views/AdminDashboard.vue'))
 
 const route=useRoute(), router=useRouter()
 const routeViews=new Set(['home','learn','profile','mistakes','knowledge-review','records','reports','points','vip','settings','admin-learning'])
@@ -417,6 +450,7 @@ const reviewTarget=reactive({
 const mistakeKnowledgePoint=ref(route.name==='mistakes'?String(route.query.kp||''):'')
 const mistakeInitialStatus=ref(route.name==='mistakes'?String(route.query.status||''):'')
 const currentUsername=ref(localStorage.getItem('question_set_username') || '同学')
+const userRole=ref(localStorage.getItem('question_set_role') || 'user')
 const pointAccount=reactive({balance:0,earned_total:0,spent_total:0}), pointTasks=ref([]), pointTransactions=ref([])
 const vipStatus=reactive({is_vip:false,started_at:null,expires_at:null}), vipUsage=reactive({}), vipOrders=ref([])
 const paymentState=reactive({status:'',orderNo:'',message:''}), paymentQuerying=ref('')
@@ -432,6 +466,7 @@ const recommendedSubject=ref('')
 const practiceRequestId=ref(''), answerRequestId=ref('')
 const practiceAnswers=reactive({})
 const isAuthed=computed(()=>Boolean(token.value))
+const isAdmin=computed(()=>userRole.value==='admin')
 const learningBusy=computed(()=>diagnosisLoading.value||practiceLoading.value||answerLoading.value)
 const learnStep=computed(()=>answerResult.value?4:currentPractice.value?3:diagnosisResult.value?2:1)
 const allQuestionsAnswered=computed(()=>Boolean(currentPractice.value?.questions?.length)&&currentPractice.value.questions.every(q=>String(practiceAnswers[q.question_id]||'').trim()))
@@ -467,6 +502,22 @@ const timelineTotal = ref(0)
 const statsSummary = ref({ practiceCount: 0, questionCount: 0, avgAccuracy: 0, masteryChange: 0 })
 const homeMastery = ref({ score: 0, total: 0 })
 const homeMistakes = ref({ total: 0, due: 0 })
+const learningSummary = ref(null)
+const summaryScoreClass = computed(() => {
+  const s = learningSummary.value?.overall_score || 0
+  return s >= 80 ? '' : s >= 60 ? 'mid' : 'low'
+})
+const summaryScoreText = computed(() => {
+  const s = learningSummary.value?.overall_score || 0
+  if (!learningSummary.value?.studied_count) return '完成练习后生成掌握度'
+  return s >= 80 ? '整体掌握良好' : s >= 60 ? '正在稳步提升' : '基础仍需加强'
+})
+const summaryDistTotal = computed(() =>
+  (learningSummary.value?.distribution || []).reduce((sum, d) => sum + d.count, 0)
+)
+function summaryDistPercent(count) {
+  return summaryDistTotal.value === 0 ? 0 : Math.round((count / summaryDistTotal.value) * 100)
+}
 const reportList = ref([])
 const reportLoading = ref(false)
 const reportRequestId = ref('')
@@ -521,8 +572,10 @@ async function fetchHomeData() {
       getMasteries({ page_size: 100 }),
       getMistakes({ page_size: 1 }),
       getTodayReviews(),
+      getLearningSummary(),
   ])
-  const [recResult, planResult, statsResult, masteryResult, mistakeResult, reviewResult] = results
+  const [recResult, planResult, statsResult, masteryResult, mistakeResult, reviewResult, summaryResult] = results
+  if (summaryResult.status === 'fulfilled' && summaryResult.value?.data) learningSummary.value = summaryResult.value.data
   if (recResult.status === 'fulfilled' && recResult.value?.data) homeRecommendations.value = recResult.value.data
   if (planResult.status === 'fulfilled' && planResult.value?.data) todayPlan.value = planResult.value.data
   if (statsResult.status === 'fulfilled' && statsResult.value?.data) {
@@ -838,11 +891,11 @@ async function bootstrapProfile(){
   applyProfile(profile)
   if(!profile){currentView.value='settings';return}
 }
-async function restoreSession(){const savedToken=getToken();if(!savedToken)return;token.value=savedToken;try{await Promise.all([loadPoints(false),loadVip(false),bootstrapProfile()]);await fetchHomeData()}catch{setToken('');token.value=''}}
-async function submitAuth(){if(authForm.username.length<6||authForm.password.length<6){ElMessage.warning('用户名和密码都需要 6 到 20 位');return}if(authMode.value==='register'&&authForm.password!==authForm.confirmPassword){ElMessage.warning('两次输入的密码不一致');return}authLoading.value=true;try{if(authMode.value==='register'){const user=await register(authForm.username,authForm.password);if(user?.id)requestForm.userId=user.id;ElMessage.success('注册成功，请登录');authMode.value='login';authForm.password='';authForm.confirmPassword='';return}const payload=await login(authForm.username,authForm.password);token.value=payload.access_token;currentUsername.value=authForm.username;localStorage.setItem('question_set_username',authForm.username);await Promise.all([loadPoints(false),loadVip(false),bootstrapProfile()]);await fetchHomeData();ElMessage.success('登录成功，欢迎回来')}catch(error){ElMessage.error(error.message||'认证失败')}finally{authLoading.value=false}}
+async function restoreSession(){const savedToken=getToken();if(!savedToken)return;token.value=savedToken;if(userRole.value==='admin')return;try{await Promise.all([loadPoints(false),loadVip(false),bootstrapProfile()]);await fetchHomeData()}catch{setToken('');token.value=''}}
+async function submitAuth(){if(authForm.username.length<6||authForm.password.length<6){ElMessage.warning('用户名和密码都需要 6 到 20 位');return}if(authMode.value==='register'&&authForm.password!==authForm.confirmPassword){ElMessage.warning('两次输入的密码不一致');return}authLoading.value=true;try{if(authMode.value==='register'){const user=await register(authForm.username,authForm.password);if(user?.id)requestForm.userId=user.id;ElMessage.success('注册成功，请登录');authMode.value='login';authForm.password='';authForm.confirmPassword='';return}const payload=await login(authForm.username,authForm.password);token.value=payload.access_token;currentUsername.value=authForm.username;localStorage.setItem('question_set_username',authForm.username);const role=payload?.user?.role||'user';userRole.value=role;localStorage.setItem('question_set_role',role);if(role==='admin'){ElMessage.success('管理员登录成功');return}await Promise.all([loadPoints(false),loadVip(false),bootstrapProfile()]);await fetchHomeData();ElMessage.success('登录成功，欢迎回来')}catch(error){ElMessage.error(error.message||'认证失败')}finally{authLoading.value=false}}
 async function clearSession(){
   try{await clearSessionMemory(Number(requestForm.sessionId)||1)}catch(error){ElMessage.warning(error.message||'短期会话清除失败，已退出本地登录')}
-  setToken('');token.value='';profileSummary.value=null;currentView.value='home';ElMessage.success('已清除当前会话并安全退出')
+  setToken('');token.value='';userRole.value='user';localStorage.removeItem('question_set_role');profileSummary.value=null;currentView.value='home';ElMessage.success('已清除当前会话并安全退出')
 }
 function learningStatusLabel(status){return {weak:'基础薄弱',consolidating:'正在巩固',mastered:'掌握良好'}[status]||status}
 function difficultyLabel(value){return {easy:'简单',medium:'中等',hard:'困难'}[value]||value}

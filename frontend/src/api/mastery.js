@@ -37,6 +37,14 @@ export function getMasteryTrend(days = 7) {
   return request(`/mastery/trend?days=${days}`, { auth: true })
 }
 
+/**
+ * 查询当前用户的学情摘要（首页学习概览）。
+ * @param {number} [weakLimit=5] 薄弱知识点返回数量
+ */
+export function getLearningSummary(weakLimit = 5) {
+  return request(`/mastery/summary?weak_limit=${weakLimit}`, { auth: true })
+}
+
 /** 获取个性化知识点复习卡。 */
 export function getKnowledgeReviewCard(knowledgePointName, subject, mode = 'full') {
   const query = new URLSearchParams({ knowledge_point_name: knowledgePointName, mode })

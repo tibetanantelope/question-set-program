@@ -20,6 +20,8 @@ from backend.api.admin_api.admin_user_api import admin_user_router
 from backend.api.admin_api.admin_audit_api import admin_audit_router
 from backend.api.admin_api.admin_question_api import admin_question_router
 from backend.api.admin_api.admin_learning_api import admin_learning_router
+from backend.api.admin_api.admin_dashboard_api import admin_dashboard_router
+from backend.api.learning_summary_api import learning_summary_router
 from backend.core.hooks import startup_event, shutdown_event
 from backend.middleware.exception import register_exception_handlers
 
@@ -67,6 +69,8 @@ app.include_router(admin_user_router)
 app.include_router(admin_audit_router)
 app.include_router(admin_question_router)
 app.include_router(admin_learning_router)
+app.include_router(admin_dashboard_router)
+app.include_router(learning_summary_router)
 
 if __name__ == "__main__":
     import uvicorn
